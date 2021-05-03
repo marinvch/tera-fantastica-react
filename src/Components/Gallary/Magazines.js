@@ -1,14 +1,28 @@
 import React from "react";
-import SwiperCore, { EffectCube } from "swiper";
+
 import { Swiper, SwiperSlide } from "swiper/react";
-import "swiper/swiper.scss";
+import SwiperCore, { EffectCoverflow } from "swiper";
+import "./gallary.css";
+import "swiper/swiper.min.css";
+import "swiper/components/effect-coverflow/effect-coverflow.min.css"
+import "swiper/components/pagination/pagination.min.css"
 import magazines from "../../Assets/magazines/data/data.json";
 
-SwiperCore.use([EffectCube]);
+SwiperCore.use([EffectCoverflow]);
 function Magazines() {
   return (
     <Swiper
-      effect="cube"
+      effect={"coverflow"}
+      grabCursor={true}
+      centeredSlides={true}
+      slidesPerView={"auto"}
+      coverflowEffect={{
+        rotate: 50,
+        stretch: 0,
+        depth: 100,
+        modifier: 1,
+        slideShadows: true,
+      }}
       loop={true}
       onSlideChange={() => {}}
       onSwiper={(swiper) => console.log(swiper)}
