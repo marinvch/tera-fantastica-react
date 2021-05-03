@@ -1,0 +1,86 @@
+[
+  {
+    "url": "BooksImages/img1.png",
+    "text": {
+      "name": "Домът на Велзевул",
+      "author": "Т. Р. Пейков",
+      "Year": 2002,
+      "Format": "60×84/16",
+      "Pages": 208
+    },
+    "id": 1,
+    "link": ""
+  },
+  {
+    "url": "BooksImages/img2.png",
+    "text": {
+      "name": "Хакери на човешките души",
+      "author": "Иван Попов",
+      "Year": 2004,
+      "Format": "56×84/16",
+      "Pages": 192
+    },
+    "id": 2,
+    "link": "../assets/books/pdf/Ivan_Popov_-_Hakeri_na_choveshkite_dushi.pdf"
+  },
+  {
+    "url": "BooksImages/img3.png",
+    "text": {
+      "name": "Операция „Риба“",
+      "author": "Гай Афраний Кота",
+      "Year": 2006,
+      "Format": "130×200 мм",
+      "Pages": 336
+    },
+    "id": 3,
+    "link": "../assets/books/pdf/Petyr_Kopanov_-_Operatsija_Riba.pdf"
+  },
+  {
+    "url": "BooksImages/img4.png",
+    "text": {
+      "name": "Орфеус слиза в Ада",
+      "author": "Георги Малинов",
+      "Year": 2007,
+      "Format": "130×200 мм",
+      "Pages": 244
+    },
+    "id": 4,
+    "link": ""
+  },
+  {
+    "url": "BooksImages/img5.png",
+    "text": {
+      "name": "Те не вярват в приказки",
+      "author": "Мартин Петков",
+      "Year": 2008,
+      "Format": "130×200 мм",
+      "Pages": 288
+    },
+    "id": 5,
+    "link": ""
+  },
+  {
+    "url": "BooksImages/img6.png",
+    "text": {
+      "name": "Домът на Велзевул",
+      "author": "Тервел Пейков",
+      "Year": 2008,
+      "Format": "130×200 мм",
+      "Pages": 224
+    },
+    "id": 6,
+    "link": ""
+  },
+  {
+    "url": "BooksImages/img7.png",
+    "text": {
+      "name": "С името на Иван Ефремов",
+      "author": "Александър Карапанчев, Юрий Илков",
+      "Year": 2009,
+      "Format": "56/84/16",
+      "Pages": 284
+    },
+    "id": 7,
+    "link": ""
+  }
+]

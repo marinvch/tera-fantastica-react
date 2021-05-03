@@ -1,0 +1,13 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Collection MaxLevel="8" TileSize="256" Format="jpg" NextItemId="2" ServerFormat="Default" xmlns="http://schemas.microsoft.com/deepzoom/2009">
+  <Items>
+    <I Id="0" N="0" Source="dzc_output_images/newspapper.xml">
+      <Size Width="1403" Height="1963" />
+      <Viewport Width="2.871550249465431" X="-0" Y="-0" />
+    </I>
+    <I Id="1" N="1" Source="dzc_output_images/canvas%202.xml">
+      <Size Width="820" Height="623" />
+      <Viewport Width="2.0523611818644931" X="-1.0523611818644933" Y="-0.12512195121951208" />
+    </I>
+  </Items>
+</Collection>

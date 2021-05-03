@@ -1,0 +1,86 @@
+[
+  {
+    "url": "/MagazineImages/img1.jpg",
+    "text": {
+      "name": "Списание „Тера фантастика“, брой 1.",
+      "author": "Юрий Илков",
+      "Year": 1999,
+      "Format": "145×200 мм",
+      "Pages": 80
+    },
+    "id": 1,
+    "link": ""
+  },
+  {
+    "url": "/MagazineImages/img2.jpg",
+    "text": {
+      "name": "Списание „Тера фантастика“, брой 2.",
+      "author": "Юрий Илков",
+      "Year": 1999,
+      "Format": "145×200 мм",
+      "Pages": 80
+    },
+    "id": 2,
+    "link": ""
+  },
+  {
+    "url": "/MagazineImages/img3.png",
+    "text": {
+      "name": "Списание „Тера фантастика“, брой 1.",
+      "author": "Юрий Илков",
+      "Year": 2000,
+      "Format": "145×200 мм",
+      "Pages": 80
+    },
+    "id": 3,
+    "link": ""
+  },
+  {
+    "url": "/MagazineImages/img4.png",
+    "text": {
+      "name": "Списание „Тера фантастика“, специален брой.",
+      "author": "Юрий Илков",
+      "Year": 2000,
+      "Format": "145×200 мм",
+      "Pages": 32
+    },
+    "id": 4,
+    "link": ""
+  },
+  {
+    "url": "/MagazineImages/img5.png",
+    "text": {
+      "name": "Списание „Тера фантастика“, брой 1.",
+      "author": "Юрий Илков",
+      "Year": 2001,
+      "Format": "145×210 мм",
+      "Pages": 112
+    },
+    "id": 5,
+    "link": ""
+  },
+  {
+    "url": "/MagazineImages/img6.png",
+    "text": {
+      "name": "Списание „Тера фантастика“, брой 2.",
+      "author": "Юрий Илков",
+      "Year": 2001,
+      "Format": "145×210 мм",
+      "Pages": 128
+    },
+    "id": 6,
+    "link": ""
+  },
+  {
+    "url": "/MagazineImages/img7.png",
+    "text": {
+      "name": "Списание „Тера фантастика“, брой 1.",
+      "author": "Юрий Илков",
+      "Year": 2002,
+      "Format": "145×210 мм",
+      "Pages": 144
+    },
+    "id": 7,
+    "link": ""
+  }
+]
