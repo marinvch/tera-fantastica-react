@@ -14,10 +14,10 @@ import ImportContactsIcon from "@material-ui/icons/ImportContacts";
 import LocalLibraryIcon from "@material-ui/icons/LocalLibrary";
 import LibraryBooksIcon from "@material-ui/icons/LibraryBooks";
 
-import Home from "./Components/Layout/Home";
-import Newspapper from "./Components/Gallary/Newspapper";
-import Magazines from "./Components/Gallary/Magazines";
-import Books from "./Components/Gallary/Books";
+import Home from "./components/Layout/Home";
+import Newspapper from "./components/Viewer";
+import Magazines from "./pages/Magazines";
+import Books from "./pages/Books";
 
 const useStyle = makeStyles({
   container: {
@@ -85,7 +85,6 @@ function App() {
           </List>
         </Drawer>
         <main className={classes.content}>
-          {" "}
           <Switch>
             <Route exact path="/" component={Home} />
             <Route path="/newspapper" component={Newspapper} />
