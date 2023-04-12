@@ -1,0 +1,62 @@
+.container {
+  display: flex;
+  
+  &__drawer-paper {
+    width: 20%;
+    background-color: black;
+  }
+  
+  &__link {
+    text-decoration: none;
+    color: white;
+  }
+  
+  &__content {
+    width: 100%;
+    z-index: 0;
+  }
+  
+  &__list {
+    // styles for list element go here
+  }
+  
+  &__list-item {
+    // styles for list item go here
+  }
+  
+  &__list-item--exact {
+    // styles for exact list item go here
+  }
+  
+  &__list-item-icon {
+    // styles for list item icon go here
+  }
+  
+  &__list-item-text {
+    // styles for list item text go here
+  }
+  
+  &__list-item-text--primary {
+    // styles for primary list item text go here
+  }
+  
+  &__home-icon {
+    color: white;
+  }
+  
+  &__local-library {
+    color: white;
+  }
+  
+  &__contacts {
+    color: white;
+  }
+  
+  &__library-books {
+    color: white;
+  }
+  
+  &__main {
+    // styles for main element go here
+  }
+}

@@ -11,7 +11,7 @@ const Carousel = ({ data }) => {
   console.log(swiperData);
   useEffect(() => {
     setSwiperData(data);
-  }, []);
+  }, [data]);
 
   return (
     <>
@@ -31,7 +31,7 @@ const Carousel = ({ data }) => {
             slideShadows: true,
           }}
           loop={true}
-          onSlideChange={() => {}}
+          onSlideChange={() => { }}
           onSwiper={(swiper) => console.log(swiper)}
         >
           {swiperData.map((item) => (
