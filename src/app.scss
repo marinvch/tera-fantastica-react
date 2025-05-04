@@ -1,62 +1,142 @@
-.container {
+.app {
+  // Block: app
   display: flex;
+  flex-direction: column;
+  min-height: 100vh;
   
-  &__drawer-paper {
-    width: 20%;
-    background-color: black;
+  &__container {
+    // Element: container inside app
+    display: flex;
+    flex-grow: 1;
   }
   
-  &__link {
-    text-decoration: none;
-    color: white;
+  &__drawer {
+    // Element: drawer inside app
+    // styles for the drawer component
+    
+    &-paper {
+      // Element: drawer-paper inside app
+      width: 240px;
+      background-color: #121212;
+      border-right: 1px solid rgba(255, 255, 255, 0.12);
+    }
   }
   
   &__content {
+    // Element: content inside app
     width: 100%;
-    z-index: 0;
+    flex-grow: 1;
+    padding: 24px;
+    transition: margin 0.3s ease;
+  }
+  
+  &__navigation {
+    // Element: navigation inside app
+    width: 100%;
   }
   
   &__list {
-    // styles for list element go here
+    // Element: list inside app
+    padding: 0;
+    margin: 0;
+    list-style: none;
   }
   
   &__list-item {
-    // styles for list item go here
-  }
-  
-  &__list-item--exact {
-    // styles for exact list item go here
+    // Element: list-item inside app
+    margin: 8px 0;
+    padding: 8px 16px;
+    border-radius: 4px;
+    transition: background-color 0.2s;
+    
+    &:hover {
+      background-color: rgba(255, 255, 255, 0.08);
+    }
+    
+    &--active {
+      // Modifier: active list item
+      background-color: rgba(255, 255, 255, 0.16);
+      
+      .app__list-item-text {
+        font-weight: 600;
+      }
+    }
   }
   
   &__list-item-icon {
-    // styles for list item icon go here
+    // Element: list-item-icon inside app
+    margin-right: 16px;
+    color: white;
   }
   
   &__list-item-text {
-    // styles for list item text go here
+    // Element: list-item-text inside app
+    color: white;
+    font-size: 0.95rem;
+    
+    &--primary {
+      // Modifier: primary list item text
+      font-weight: 500;
+    }
   }
   
-  &__list-item-text--primary {
-    // styles for primary list item text go here
+  &__link {
+    // Element: link inside app
+    text-decoration: none;
+    color: white;
+    display: flex;
+    align-items: center;
   }
   
+  &__main {
+    // Element: main inside app
+    padding: 24px;
+    flex-grow: 1;
+  }
+  
+  // Specific icon colors if needed
   &__home-icon {
     color: white;
   }
   
-  &__local-library {
+  &__library-icon {
     color: white;
   }
   
-  &__contacts {
+  &__contacts-icon {
     color: white;
   }
   
-  &__library-books {
+  &__books-icon {
     color: white;
   }
-  
-  &__main {
-    // styles for main element go here
+}
+
+// Media queries for responsive design
+@media (max-width: 768px) {
+  .app {
+    &__drawer-paper {
+      width: 200px;
+    }
+    
+    &__content {
+      padding: 16px;
+    }
+  }
+}
+
+@media (max-width: 480px) {
+  .app {
+    &__drawer-paper {
+      width: 180px;
+    }
+    
+    &__content {
+      padding: 12px;
+    }
+    
+    &__list-item {
+      padding: 6px 12px;
+    }
   }
 }

@@ -1,0 +1,191 @@
+/* Carousel/Swiper Component Styles using BEM methodology */
+.carousel {
+  /* Block: carousel */
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  overflow: hidden;
+}
+
+/* Swiper component styling */
+.swiper {
+  /* Block: swiper */
+  width: 100%;
+  padding-top: 30px;
+  padding-bottom: 50px;
+  overflow: visible;
+  
+  &__container {
+    /* Element: container inside swiper */
+    width: 100%;
+    padding: 30px 0;
+    overflow: hidden;
+  }
+  
+  &__slide {
+    /* Element: slide inside swiper */
+    background-position: center;
+    background-size: cover;
+    width: 300px;
+    height: 400px;
+    filter: blur(1px);
+    opacity: 0.8;
+    transition: transform 0.3s ease, filter 0.3s ease, opacity 0.3s ease;
+    
+    &--active {
+      /* Modifier: active slide */
+      filter: blur(0);
+      opacity: 1;
+      transform: scale(1.1);
+      z-index: 2;
+    }
+    
+    &--adjacent {
+      /* Modifier: slides next to active (prev and next) */
+      filter: blur(0);
+      opacity: 1;
+      transform: scale(0.9);
+      z-index: 1;
+    }
+  }
+  
+  &__content {
+    /* Element: content inside swiper slide */
+    width: 100%;
+    height: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 10px;
+    overflow: hidden;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+  }
+  
+  &__image {
+    /* Element: image inside swiper content */
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+}
+
+/* Item details section styling */
+.item-details {
+  /* Block: item-details */
+  width: 90%;
+  max-width: 600px;
+  margin-top: 30px;
+  padding: 20px;
+  background: #f8f8f8;
+  border-radius: 10px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  text-align: center;
+  animation: fadeIn 0.5s ease;
+  
+  &__title {
+    /* Element: title inside item-details */
+    font-size: 1.5rem;
+    margin-bottom: 10px;
+    color: #333;
+  }
+  
+  &__description {
+    /* Element: description inside item-details */
+    margin: 5px 0;
+    color: #555;
+  }
+  
+  &__link {
+    /* Element: link inside item-details */
+    display: inline-block;
+    margin-top: 15px;
+    color: #d32f2f;
+    transition: transform 0.2s ease;
+    
+    &:hover {
+      transform: scale(1.2);
+    }
+  }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Navigation and pagination styling */
+.swiper-navigation {
+  /* Block: swiper-navigation */
+  
+  &__button {
+    /* Element: button inside swiper-navigation */
+    color: #333;
+    background: rgba(255, 255, 255, 0.7);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    
+    &--prev::after,
+    &--next::after {
+      /* Modifier: prev and next button icons */
+      font-size: 18px;
+    }
+  }
+}
+
+.swiper-pagination {
+  &__bullet {
+    /* Element: bullet inside pagination */
+    background: #666;
+    opacity: 0.7;
+    
+    &--active {
+      /* Modifier: active pagination bullet */
+      background: #333;
+      opacity: 1;
+    }
+  }
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .swiper {
+    &__slide {
+      width: 220px;
+      height: 300px;
+    }
+  }
+  
+  .item-details {
+    width: 95%;
+    padding: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .swiper {
+    &__slide {
+      width: 180px;
+      height: 250px;
+    }
+  }
+  
+  .carousel {
+    padding: 10px 0;
+  }
+  
+  .swiper-navigation {
+    &__button {
+      width: 30px;
+      height: 30px;
+    }
+  }
+}
