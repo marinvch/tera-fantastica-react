@@ -1,7 +1,7 @@
 import React from "react";
 import "../../App.css";
 
-function Header() {
+const Header: React.FC = () => { // Added React.FC type
   return (
     <div className="header">
       <input />
