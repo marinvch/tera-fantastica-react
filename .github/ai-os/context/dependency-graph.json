@@ -1,0 +1,228 @@
+{
+  "nodes": {
+    "src/App.tsx": {
+      "path": "src/App.tsx",
+      "imports": [
+        "src/components/Layout/Home.tsx",
+        "src/pages/Newspaper.tsx",
+        "src/pages/Magazines.tsx",
+        "src/pages/Books.tsx",
+        "src/components/GlobalSearch.tsx"
+      ],
+      "importedBy": [
+        "src/index.tsx"
+      ],
+      "exports": []
+    },
+    "src/components/Carousel.tsx": {
+      "path": "src/components/Carousel.tsx",
+      "imports": [
+        "src/types/index.ts"
+      ],
+      "importedBy": [
+        "src/pages/Books.tsx",
+        "src/pages/Magazines.tsx"
+      ],
+      "exports": []
+    },
+    "src/components/GlobalSearch.tsx": {
+      "path": "src/components/GlobalSearch.tsx",
+      "imports": [
+        "src/utils/search.ts",
+        "src/utils/hooks.ts"
+      ],
+      "importedBy": [
+        "src/App.tsx"
+      ],
+      "exports": []
+    },
+    "src/components/Layout/Footer.jsx": {
+      "path": "src/components/Layout/Footer.jsx",
+      "imports": [],
+      "importedBy": [],
+      "exports": []
+    },
+    "src/components/Layout/Footer.tsx": {
+      "path": "src/components/Layout/Footer.tsx",
+      "imports": [],
+      "importedBy": [],
+      "exports": []
+    },
+    "src/components/Layout/Header.jsx": {
+      "path": "src/components/Layout/Header.jsx",
+      "imports": [],
+      "importedBy": [],
+      "exports": []
+    },
+    "src/components/Layout/Header.tsx": {
+      "path": "src/components/Layout/Header.tsx",
+      "imports": [],
+      "importedBy": [],
+      "exports": []
+    },
+    "src/components/Layout/Home.tsx": {
+      "path": "src/components/Layout/Home.tsx",
+      "imports": [],
+      "importedBy": [
+        "src/App.tsx"
+      ],
+      "exports": []
+    },
+    "src/components/Viewer.tsx": {
+      "path": "src/components/Viewer.tsx",
+      "imports": [
+        "src/types/index.ts"
+      ],
+      "importedBy": [
+        "src/pages/Newspaper.tsx"
+      ],
+      "exports": []
+    },
+    "src/data/booksCatalog.ts": {
+      "path": "src/data/booksCatalog.ts",
+      "imports": [
+        "src/types/index.ts",
+        "src/utils/archivePaths.ts"
+      ],
+      "importedBy": [
+        "src/utils/search.ts"
+      ],
+      "exports": [
+        "booksCatalog",
+        "getBookById"
+      ]
+    },
+    "src/index.tsx": {
+      "path": "src/index.tsx",
+      "imports": [
+        "src/App.tsx"
+      ],
+      "importedBy": [],
+      "exports": []
+    },
+    "src/pages/Books.tsx": {
+      "path": "src/pages/Books.tsx",
+      "imports": [
+        "src/components/Carousel.tsx",
+        "src/types/index.ts",
+        "src/utils/archivePaths.ts"
+      ],
+      "importedBy": [
+        "src/App.tsx",
+        "src/Router.jsx"
+      ],
+      "exports": []
+    },
+    "src/pages/Magazines.tsx": {
+      "path": "src/pages/Magazines.tsx",
+      "imports": [
+        "src/components/Carousel.tsx",
+        "src/types/index.ts",
+        "src/utils/archivePaths.ts"
+      ],
+      "importedBy": [
+        "src/App.tsx",
+        "src/Router.jsx"
+      ],
+      "exports": []
+    },
+    "src/pages/Newspaper.tsx": {
+      "path": "src/pages/Newspaper.tsx",
+      "imports": [
+        "src/components/Viewer.tsx",
+        "src/types/index.ts",
+        "src/utils/archivePaths.ts"
+      ],
+      "importedBy": [
+        "src/App.tsx"
+      ],
+      "exports": []
+    },
+    "src/Router.jsx": {
+      "path": "src/Router.jsx",
+      "imports": [
+        "src/pages/Magazines.tsx",
+        "src/pages/Books.tsx"
+      ],
+      "importedBy": [],
+      "exports": [
+        "AppRouter"
+      ]
+    },
+    "src/types/index.ts": {
+      "path": "src/types/index.ts",
+      "imports": [],
+      "importedBy": [
+        "src/components/Carousel.tsx",
+        "src/components/Viewer.tsx",
+        "src/data/booksCatalog.ts",
+        "src/pages/Books.tsx",
+        "src/pages/Magazines.tsx",
+        "src/pages/Newspaper.tsx",
+        "src/utils/search.ts"
+      ],
+      "exports": [
+        "CarouselItem",
+        "CarouselProps",
+        "BookReaderItem",
+        "ArchiveItemText",
+        "ArchiveSourceItem",
+        "NewspaperIssue",
+        "ViewerProps"
+      ]
+    },
+    "src/utils/archivePaths.ts": {
+      "path": "src/utils/archivePaths.ts",
+      "imports": [],
+      "importedBy": [
+        "src/data/booksCatalog.ts",
+        "src/pages/Books.tsx",
+        "src/pages/Magazines.tsx",
+        "src/pages/Newspaper.tsx",
+        "src/utils/search.ts"
+      ],
+      "exports": [
+        "normalizePublicAssetPath"
+      ]
+    },
+    "src/utils/hooks.ts": {
+      "path": "src/utils/hooks.ts",
+      "imports": [],
+      "importedBy": [
+        "src/components/GlobalSearch.tsx"
+      ],
+      "exports": [
+        "useDebouncedValue"
+      ]
+    },
+    "src/utils/search.ts": {
+      "path": "src/utils/search.ts",
+      "imports": [
+        "src/data/booksCatalog.ts",
+        "src/utils/archivePaths.ts",
+        "src/types/index.ts"
+      ],
+      "importedBy": [
+        "src/components/GlobalSearch.tsx"
+      ],
+      "exports": [
+        "searchGlobalArchive",
+        "getCombinedArchiveData"
+      ]
+    },
+    "src/vite-env.d.ts": {
+      "path": "src/vite-env.d.ts",
+      "imports": [],
+      "importedBy": [],
+      "exports": []
+    },
+    "vite.config.ts": {
+      "path": "vite.config.ts",
+      "imports": [],
+      "importedBy": [],
+      "exports": []
+    }
+  },
+  "generatedAt": "2026-05-10T05:13:35.011Z",
+  "fileCount": 21
+}

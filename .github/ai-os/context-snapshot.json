@@ -1,0 +1,19 @@
+{
+  "capturedAt": "2026-05-10T05:13:36.601Z",
+  "aiOsVersion": "0.15.0",
+  "artifactHashes": {
+    ".github/ai-os/context/conventions.md": "9e1e15a4e920a51974517ce8ac289484ccedb1f1f21cfd0c46563c7fb20d917e",
+    ".github/ai-os/context/architecture.md": "4ea2023d7dd1273433ad3683d0fc0f81e55c9f9eef66713232a3d2c4c55ad604",
+    ".github/ai-os/context/stack.md": "d0c6a9791b66a5a2c1d84a344e98b9068f23eca11b7d5a34d95670fac6d62a00",
+    ".github/copilot-instructions.md": "6271d301868caee15f2afab379fc3643d0360f4048a9353ee200c3ff4954ad13",
+    ".github/ai-os/config.json": "1f6530a3b0bb7cfaa7c94c90c0342a68f2b4d734313291067b4c8190a6fee837",
+    ".github/ai-os/tools.json": "ba6dd555adfb1178ff8c58a9f1077aa6b5069e14f917148c68672472095b6189"
+  },
+  "sourceHashes": {
+    "package.json": "5b689b1f43ec437259e7c5747088cf1adbfd4cf1ef84f5123af4b49707e010f0",
+    "package-lock.json": "2267d5878b449a70ce260c95a771b4334b03f6a997ef5803329afa130518e495",
+    "tsconfig.json": "bc4b35611ebc5bf1ceb0f75316244ec9d16845a0a24aecd926698c007c510c53",
+    "src/": "57d7180967d86c6632aca88b19aa29366a42d0d9b674c4291f64c75cefd3f448"
+  },
+  "trackedFileCount": 2829
+}

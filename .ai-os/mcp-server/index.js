@@ -1,0 +1,2590 @@
+// AI OS MCP Server — bundled single-file deployment
+
+// src/mcp-server/index.ts
+import path10 from "node:path";
+
+// src/mcp-server/tool-definitions.ts
+import fs from "node:fs";
+import path from "node:path";
+
+// src/mcp-tools.ts
+var always = () => true;
+var MCP_TOOL_DEFINITIONS = [
+  {
+    name: "search_codebase",
+    description: "Search for patterns, symbols, or text across the project codebase. Respects .gitignore. Returns matching file paths and snippets.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "The pattern or text to search for" },
+        filePattern: { type: "string", description: 'Optional glob pattern to limit search (e.g. "*.ts", "src/**/*.py")' },
+        caseSensitive: { type: "boolean", description: "Whether search is case-sensitive (default: false)" }
+      },
+      required: ["query"]
+    },
+    condition: always
+  },
+  {
+    name: "get_project_structure",
+    description: "Returns an annotated file tree of the project (respects .gitignore, skips node_modules/build/dist). Useful for understanding project layout before making changes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        depth: { type: "number", description: "Max directory depth to show (default: 4)" },
+        path: { type: "string", description: "Subdirectory to start from (default: project root)" }
+      }
+    },
+    condition: always
+  },
+  {
+    name: "get_conventions",
+    description: "Returns the detected coding conventions for this project: naming rules, file structure, testing patterns, forbidden practices.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  {
+    name: "get_stack_info",
+    description: "Returns the complete tech stack inventory: languages, frameworks, key dependencies, build tools, and test setup.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  {
+    name: "get_file_summary",
+    description: "Returns a structured summary of a specific file: key exports, types, functions, and brief description. Token-efficient alternative to reading the full file.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filePath: { type: "string", description: "Path to the file relative to project root" }
+      },
+      required: ["filePath"]
+    },
+    condition: always
+  },
+  {
+    name: "get_prisma_schema",
+    description: "Returns the full Prisma schema file contents. Use before making any database model changes.",
+    inputSchema: { type: "object", properties: {} },
+    condition: (stack) => stack.allDependencies.includes("prisma") || stack.allDependencies.includes("@prisma/client")
+  },
+  {
+    name: "get_trpc_procedures",
+    description: "Returns a summary of all tRPC procedures (name, input type, public/private). Avoids reading the entire router file.",
+    inputSchema: { type: "object", properties: {} },
+    condition: (stack) => {
+      const frameworks = stack.frameworks.map((f) => f.name.toLowerCase());
+      return stack.allDependencies.includes("@trpc/server") || frameworks.includes("trpc");
+    }
+  },
+  {
+    name: "get_api_routes",
+    description: "Returns a list of API routes with HTTP methods using stack-aware discovery for Node, Java/Spring, Python, Go, and Rust patterns.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filter: { type: "string", description: 'Optional substring to filter routes (e.g. "auth", "webhook")' }
+      }
+    },
+    condition: (stack) => {
+      const frameworks = stack.frameworks.map((f) => f.name.toLowerCase());
+      return frameworks.some(
+        (f) => f.includes("next") || f.includes("express") || f.includes("fastapi") || f.includes("django") || f.includes("flask") || f.includes("spring") || f.includes("quarkus") || f.includes("micronaut") || f.includes("gin") || f.includes("echo") || f.includes("fiber") || f.includes("chi") || f.includes("actix") || f.includes("axum") || f.includes("rocket")
+      );
+    }
+  },
+  {
+    name: "get_env_vars",
+    description: "Returns all required environment variable names (from .env.example or code). Shows which are set vs. missing. Never returns values.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  {
+    name: "get_package_info",
+    description: "Returns installed package versions and direct dependencies. Useful before suggesting library usage to avoid API mismatch.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        packageName: { type: "string", description: 'Optional: specific package to look up (e.g. "@trpc/server")' }
+      }
+    },
+    condition: always
+  },
+  {
+    name: "get_impact_of_change",
+    description: "Shows what files are affected when a given file changes. Returns direct importers and all transitively affected files.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filePath: { type: "string", description: 'File path relative to project root (e.g. "src/types.ts")' }
+      },
+      required: ["filePath"]
+    },
+    condition: always
+  },
+  {
+    name: "get_dependency_chain",
+    description: "Shows the full dependency chain for a file: what it imports and what imports it, with export names.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        filePath: { type: "string", description: 'File path relative to project root (e.g. "src/utils/auth.ts")' }
+      },
+      required: ["filePath"]
+    },
+    condition: always
+  },
+  {
+    name: "check_for_updates",
+    description: "Checks if the AI OS artifacts installed in this repo are out of date. Returns update instructions when a newer version of AI OS is available.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  {
+    name: "get_memory_guidelines",
+    description: "Returns repository memory rules and memory usage protocol from .github/ai-os/context/memory.md.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  {
+    name: "get_repo_memory",
+    description: "Retrieves persisted repository memory entries from .github/ai-os/memory/memory.jsonl, optionally filtered by query/category.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Optional full-text query against title/content/tags" },
+        category: { type: "string", description: "Optional category filter (e.g. architecture, conventions, pitfalls)" },
+        limit: { type: "number", description: "Max entries to return (default: 10, max: 50)" }
+      }
+    },
+    condition: always
+  },
+  {
+    name: "remember_repo_fact",
+    description: "Stores a durable repository memory entry in .github/ai-os/memory/memory.jsonl using dedupe/upsert rules (marks superseded conflicts and avoids duplicate facts).",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Short memory title" },
+        content: { type: "string", description: "Durable fact/decision/constraint" },
+        category: { type: "string", description: "Category (e.g. conventions, architecture, build, testing, security)" },
+        tags: { type: "string", description: "Optional comma-separated tags" }
+      },
+      required: ["title", "content"]
+    },
+    condition: always
+  },
+  {
+    name: "get_active_plan",
+    description: "Returns the persisted active session plan from .github/ai-os/memory/session/active-plan.json. Use after context resets to restore goals and avoid drift.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  {
+    name: "upsert_active_plan",
+    description: "Creates or updates the persisted active plan (objective, criteria, current/next step, blockers). This provides durable task state across context resets.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        objective: { type: "string", description: "Primary goal for the current task" },
+        acceptanceCriteria: { type: "string", description: "Success criteria for task completion" },
+        status: { type: "string", description: "Plan status: active, paused, or completed" },
+        currentStep: { type: "string", description: "Current execution step" },
+        nextStep: { type: "string", description: "Next planned action" },
+        blockers: { type: "string", description: "Optional blockers, comma-separated or newline-separated" }
+      },
+      required: ["objective", "acceptanceCriteria"]
+    },
+    condition: always
+  },
+  {
+    name: "append_checkpoint",
+    description: "Appends a progress checkpoint to .github/ai-os/memory/session/checkpoints.jsonl to preserve intent and execution state during long tool-call sequences.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        title: { type: "string", description: "Checkpoint title" },
+        status: { type: "string", description: "Checkpoint status: open or closed (default: open)" },
+        notes: { type: "string", description: "Optional checkpoint notes" },
+        toolCallCount: { type: "number", description: "Optional tool call count snapshot at checkpoint time" }
+      },
+      required: ["title"]
+    },
+    condition: always
+  },
+  {
+    name: "close_checkpoint",
+    description: "Closes an existing checkpoint by id in .github/ai-os/memory/session/checkpoints.jsonl.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        checkpointId: { type: "string", description: "Checkpoint id returned by append_checkpoint" },
+        notes: { type: "string", description: "Optional closing notes to append" }
+      },
+      required: ["checkpointId"]
+    },
+    condition: always
+  },
+  {
+    name: "record_failure_pattern",
+    description: "Records or updates a failure pattern in .github/ai-os/memory/session/failure-ledger.jsonl to prevent repeating the same mistakes.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        tool: { type: "string", description: "Tool or subsystem where failure occurred" },
+        errorSignature: { type: "string", description: "Short normalized error signature" },
+        rootCause: { type: "string", description: "Suspected or confirmed root cause" },
+        attemptedFix: { type: "string", description: "Fix that was attempted" },
+        outcome: { type: "string", description: "Result of the fix: unresolved, partial, or resolved" },
+        confidence: { type: "number", description: "Confidence in diagnosis from 0.0 to 1.0" }
+      },
+      required: ["tool", "errorSignature", "rootCause", "attemptedFix"]
+    },
+    condition: always
+  },
+  {
+    name: "compact_session_context",
+    description: "Creates a compact session summary from active plan, open checkpoints, and recent failure patterns to reduce context stuffing and preserve continuity.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  // ── Tool #19: Session Continuity ─────────────────────────────────────────
+  {
+    name: "get_session_context",
+    description: "Returns the compact session context card with MUST-ALWAYS rules, build/test commands, and key file locations. CALL THIS at the start of every new conversation to reload critical context after a session reset.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  // ── Tool #20: Recommendation Engine ──────────────────────────────────────
+  {
+    name: "get_recommendations",
+    description: "Returns stack-appropriate recommendations: MCP servers, VS Code extensions, agent skills, and GitHub Copilot Extensions. Useful for setting up a new developer environment.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  // ── Tool #21: Improvement Suggestions ────────────────────────────────────
+  {
+    name: "suggest_improvements",
+    description: "Analyzes project structure and memory entries to return architectural and tooling optimization suggestions (e.g. missing env var documentation, undocumented key paths, skills gaps).",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  // ── Tool #22: Watchdog Configuration ─────────────────────────────────────
+  {
+    name: "set_watchdog_threshold",
+    description: "Configures the automatic watchdog checkpoint interval for the current session (default: 8 tool calls). Increase for complex multi-step tasks; decrease for shorter focused work. Range: 1\u2013100.",
+    inputSchema: {
+      type: "object",
+      properties: {
+        threshold: { type: "number", description: "Number of tool calls between automatic watchdog checkpoints (1\u2013100)" }
+      },
+      required: ["threshold"]
+    },
+    condition: always
+  },
+  // ── Tool #23: Session State Reset ─────────────────────────────────────────
+  {
+    name: "reset_session_state",
+    description: "Clears all session state files (active-plan.json, checkpoints.jsonl, failure-ledger.jsonl, runtime-state.json, compact-context.md) so a new branch or task starts from a clean slate. Durable repo memory (memory.jsonl) is never modified.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  // ── Tool #24: Sync Hosted Memory ──────────────────────────────────────────
+  {
+    name: "sync_hosted_memory",
+    description: "Returns guidance and a prompt template for mirroring durable facts from Copilot hosted/in-context memory into .github/ai-os/memory/memory.jsonl. Lists existing entries to prevent duplication.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  // ── Tool #25: Context Freshness ─────────────────────────────────
+  {
+    name: "get_context_freshness",
+    description: "Computes a freshness score (0\u2013100) for AI OS context artifacts by comparing them against the stored context snapshot. Returns a list of stale artifacts, changed source files, and targeted sync recommendations. Run after structural code changes to detect context drift.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  },
+  // ── Tool #26: Memory Prune (Compact) ─────────────────────────────
+  {
+    name: "prune_memory",
+    description: "Compacts the repository memory file by running full hygiene (near-duplicate detection, TTL enforcement, superseded entry removal) and physically deleting all stale entries. Returns a maintenance summary with counts of removed vs. kept entries.",
+    inputSchema: { type: "object", properties: {} },
+    condition: always
+  }
+];
+function getAllMcpTools() {
+  return MCP_TOOL_DEFINITIONS.map(({ condition: _condition, ...tool }) => tool);
+}
+
+// src/mcp-server/tool-definitions.ts
+function isMcpToolDefinition(obj) {
+  if (typeof obj !== "object" || obj === null) return false;
+  const o = obj;
+  return typeof o["name"] === "string" && o["name"].length > 0 && typeof o["description"] === "string" && typeof o["inputSchema"] === "object" && o["inputSchema"] !== null && o["inputSchema"]["type"] === "object";
+}
+function getAllMcpTools2() {
+  return getAllMcpTools().map((tool) => ({
+    name: tool.name,
+    description: tool.description,
+    inputSchema: tool.inputSchema
+  }));
+}
+function getActiveToolsForProject(projectRoot) {
+  const toolsJsonPath = path.join(projectRoot, ".github", "ai-os", "tools.json");
+  if (!fs.existsSync(toolsJsonPath)) {
+    return getAllMcpTools2();
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(fs.readFileSync(toolsJsonPath, "utf-8"));
+  } catch {
+    return getAllMcpTools2();
+  }
+  if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+    const obj = parsed;
+    if (Array.isArray(obj["activeTools"])) {
+      const valid = obj["activeTools"].filter((t) => {
+        if (isMcpToolDefinition(t)) return true;
+        console.warn(`\u26A0\uFE0F  tools.json: skipping invalid tool entry \u2014 missing required fields (name/description/inputSchema.type).`);
+        return false;
+      });
+      return valid.map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      }));
+    }
+  }
+  if (Array.isArray(parsed)) {
+    const valid = parsed.filter((t) => {
+      if (isMcpToolDefinition(t)) return true;
+      console.warn(`\u26A0\uFE0F  tools.json: skipping invalid tool entry \u2014 missing required fields (name/description/inputSchema.type).`);
+      return false;
+    });
+    return valid.map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      inputSchema: tool.inputSchema
+    }));
+  }
+  return getAllMcpTools2();
+}
+
+// src/mcp-server/utils.ts
+import fs9 from "node:fs";
+import path9 from "node:path";
+import { fileURLToPath as fileURLToPath2 } from "node:url";
+
+// src/updater.ts
+import path2 from "node:path";
+import { spawnSync } from "node:child_process";
+import { fileURLToPath } from "node:url";
+var __dirname = path2.dirname(fileURLToPath(import.meta.url));
+function parseSemver(v) {
+  const [maj = 0, min = 0, pat = 0] = v.replace(/^v/, "").split(".").map(Number);
+  return [maj, min, pat];
+}
+function compareSemver(a, b) {
+  const [aMaj = 0, aMin = 0, aPat = 0] = parseSemver(a);
+  const [bMaj = 0, bMin = 0, bPat = 0] = parseSemver(b);
+  if (aMaj !== bMaj) return aMaj > bMaj ? 1 : -1;
+  if (aMin !== bMin) return aMin > bMin ? 1 : -1;
+  if (aPat !== bPat) return aPat > bPat ? 1 : -1;
+  return 0;
+}
+function getLatestPublishedTagVersion() {
+  try {
+    const result = spawnSync(
+      "git",
+      ["ls-remote", "--tags", "--refs", "https://github.com/marinvch/ai-os.git", "v*"],
+      {
+        encoding: "utf-8",
+        timeout: 5e3
+      }
+    );
+    if (result.status !== 0 || !result.stdout) return null;
+    const versions = result.stdout.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).map((line) => {
+      const match = line.match(/refs\/tags\/v(\d+\.\d+\.\d+)$/);
+      return match?.[1] ?? null;
+    }).filter((v) => v !== null);
+    if (versions.length === 0) return null;
+    return versions.reduce(
+      (latest, current) => compareSemver(current, latest) > 0 ? current : latest
+    );
+  } catch {
+    return null;
+  }
+}
+function getLatestResolvableVersion(toolVersion) {
+  const published = getLatestPublishedTagVersion();
+  if (!published) return toolVersion;
+  return compareSemver(published, toolVersion) > 0 ? published : toolVersion;
+}
+
+// src/mcp-server/shared.ts
+import fs2 from "node:fs";
+import path3 from "node:path";
+var ROOT = process.env["AI_OS_ROOT"] ?? process.cwd();
+function readAiOsFile(relPath) {
+  try {
+    return fs2.readFileSync(path3.join(ROOT, ".github", "ai-os", relPath), "utf-8");
+  } catch {
+    return "";
+  }
+}
+function getMemoryFilePath() {
+  return path3.join(ROOT, ".github", "ai-os", "memory", "memory.jsonl");
+}
+function getMemoryDirPath() {
+  return path3.join(ROOT, ".github", "ai-os", "memory");
+}
+function getMemoryLockFilePath() {
+  return path3.join(getMemoryDirPath(), ".memory.lock");
+}
+function getSessionMemoryDirPath() {
+  return path3.join(getMemoryDirPath(), "session");
+}
+function getSessionLockFilePath() {
+  return path3.join(getSessionMemoryDirPath(), ".session.lock");
+}
+function getActivePlanPath() {
+  return path3.join(getSessionMemoryDirPath(), "active-plan.json");
+}
+function getCheckpointLogPath() {
+  return path3.join(getSessionMemoryDirPath(), "checkpoints.jsonl");
+}
+function getFailureLedgerPath() {
+  return path3.join(getSessionMemoryDirPath(), "failure-ledger.jsonl");
+}
+function getCompactContextPath() {
+  return path3.join(getSessionMemoryDirPath(), "compact-context.md");
+}
+function getRuntimeStatePath() {
+  return path3.join(getSessionMemoryDirPath(), "runtime-state.json");
+}
+function ensureMemoryStore() {
+  const memoryDir = getMemoryDirPath();
+  if (!fs2.existsSync(memoryDir)) {
+    fs2.mkdirSync(memoryDir, { recursive: true });
+  }
+  const memoryFile = getMemoryFilePath();
+  if (!fs2.existsSync(memoryFile)) {
+    fs2.writeFileSync(memoryFile, "", "utf-8");
+  }
+}
+function ensureSessionMemoryStore() {
+  ensureMemoryStore();
+  const sessionDir = getSessionMemoryDirPath();
+  if (!fs2.existsSync(sessionDir)) {
+    fs2.mkdirSync(sessionDir, { recursive: true });
+  }
+  const checkpointsPath = getCheckpointLogPath();
+  if (!fs2.existsSync(checkpointsPath)) {
+    fs2.writeFileSync(checkpointsPath, "", "utf-8");
+  }
+  const failurePath = getFailureLedgerPath();
+  if (!fs2.existsSync(failurePath)) {
+    fs2.writeFileSync(failurePath, "", "utf-8");
+  }
+}
+function writeTextAtomic(filePath, content) {
+  const tempPath = `${filePath}.tmp-${process.pid}-${Date.now()}`;
+  fs2.writeFileSync(tempPath, content, "utf-8");
+  fs2.renameSync(tempPath, filePath);
+}
+function readJsonlFile(filePath) {
+  if (!fs2.existsSync(filePath)) return [];
+  const lines = fs2.readFileSync(filePath, "utf-8").split("\n").map((line) => line.trim()).filter(Boolean);
+  const rows = [];
+  for (const line of lines) {
+    try {
+      rows.push(JSON.parse(line));
+    } catch {
+    }
+  }
+  return rows;
+}
+function sleepSync(ms) {
+  const shared = new SharedArrayBuffer(4);
+  const int32 = new Int32Array(shared);
+  Atomics.wait(int32, 0, 0, ms);
+}
+function trimJsonlFileToCap(filePath, cap) {
+  if (!fs2.existsSync(filePath)) return;
+  const lines = fs2.readFileSync(filePath, "utf-8").split("\n").filter(Boolean);
+  if (lines.length <= cap) return;
+  writeTextAtomic(filePath, lines.slice(lines.length - cap).join("\n") + "\n");
+}
+var MEMORY_LOCK_WAIT_MS = 2e3;
+var MEMORY_LOCK_RETRY_MS = 50;
+var MEMORY_LOCK_STALE_MS = 15e3;
+var SESSION_LOCK_WAIT_MS = 1e3;
+var SESSION_LOCK_RETRY_MS = 30;
+var _activeLockPath = null;
+function _releaseLockOnExit() {
+  if (_activeLockPath) {
+    try {
+      fs2.unlinkSync(_activeLockPath);
+    } catch {
+    }
+    _activeLockPath = null;
+  }
+}
+process.on("exit", _releaseLockOnExit);
+var _activeSessionLockPath = null;
+function _releaseSessionLockOnExit() {
+  if (_activeSessionLockPath) {
+    try {
+      fs2.unlinkSync(_activeSessionLockPath);
+    } catch {
+    }
+    _activeSessionLockPath = null;
+  }
+}
+process.on("exit", _releaseSessionLockOnExit);
+function withSessionLock(fn) {
+  ensureSessionMemoryStore();
+  const lockPath = getSessionLockFilePath();
+  const startedAt = Date.now();
+  let lockFd = null;
+  while (Date.now() - startedAt < SESSION_LOCK_WAIT_MS) {
+    try {
+      lockFd = fs2.openSync(lockPath, "wx");
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") throw err;
+      try {
+        const lockStat = fs2.statSync(lockPath);
+        if (Date.now() - lockStat.mtimeMs > MEMORY_LOCK_STALE_MS) {
+          fs2.unlinkSync(lockPath);
+          continue;
+        }
+      } catch {
+      }
+      sleepSync(SESSION_LOCK_RETRY_MS);
+    }
+  }
+  if (lockFd === null) {
+    return fn();
+  }
+  _activeSessionLockPath = lockPath;
+  try {
+    return fn();
+  } finally {
+    _activeSessionLockPath = null;
+    try {
+      fs2.closeSync(lockFd);
+    } catch {
+    }
+    try {
+      fs2.unlinkSync(lockPath);
+    } catch {
+    }
+  }
+}
+function withMemoryLock(fn) {
+  ensureMemoryStore();
+  const lockPath = getMemoryLockFilePath();
+  const startedAt = Date.now();
+  let lockFd = null;
+  while (Date.now() - startedAt < MEMORY_LOCK_WAIT_MS) {
+    try {
+      lockFd = fs2.openSync(lockPath, "wx");
+      break;
+    } catch (err) {
+      if (err.code !== "EEXIST") {
+        throw err;
+      }
+      try {
+        const lockStat = fs2.statSync(lockPath);
+        if (Date.now() - lockStat.mtimeMs > MEMORY_LOCK_STALE_MS) {
+          fs2.unlinkSync(lockPath);
+          continue;
+        }
+      } catch {
+      }
+      sleepSync(MEMORY_LOCK_RETRY_MS);
+    }
+  }
+  if (lockFd === null) {
+    throw new Error("Timed out waiting for repository memory lock.");
+  }
+  _activeLockPath = lockPath;
+  try {
+    return fn();
+  } finally {
+    _activeLockPath = null;
+    try {
+      fs2.closeSync(lockFd);
+    } catch {
+    }
+    try {
+      fs2.unlinkSync(lockPath);
+    } catch {
+    }
+  }
+}
+
+// src/mcp-server/memory.ts
+import fs3 from "node:fs";
+import path4 from "node:path";
+var MEMORY_STALE_DAYS = 180;
+var NEAR_DUPLICATE_THRESHOLD = 0.85;
+function normalizeWhitespace(value) {
+  return value.trim().replace(/\s+/g, " ");
+}
+function normalizeMemoryText(value) {
+  return normalizeWhitespace(value).toLowerCase();
+}
+function readMemoryConfig() {
+  const configPath = path4.join(ROOT, ".github", "ai-os", "config.json");
+  try {
+    const raw = JSON.parse(fs3.readFileSync(configPath, "utf-8"));
+    const ttlDays = typeof raw["memoryTtlDays"] === "number" && raw["memoryTtlDays"] > 0 ? Math.floor(raw["memoryTtlDays"]) : MEMORY_STALE_DAYS;
+    const nearDuplicateThreshold = typeof raw["memoryNearDuplicateThreshold"] === "number" ? Math.max(0.5, Math.min(1, raw["memoryNearDuplicateThreshold"])) : NEAR_DUPLICATE_THRESHOLD;
+    return { ttlDays, nearDuplicateThreshold };
+  } catch {
+    return { ttlDays: MEMORY_STALE_DAYS, nearDuplicateThreshold: NEAR_DUPLICATE_THRESHOLD };
+  }
+}
+function jaccardSimilarity(a, b) {
+  const wordsA = new Set(a.toLowerCase().split(/\W+/).filter(Boolean));
+  const wordsB = new Set(b.toLowerCase().split(/\W+/).filter(Boolean));
+  if (wordsA.size === 0 || wordsB.size === 0) return 0;
+  let intersection = 0;
+  for (const word of wordsA) {
+    if (wordsB.has(word)) intersection += 1;
+  }
+  const union = wordsA.size + wordsB.size - intersection;
+  return intersection / union;
+}
+function normalizeTags(tags) {
+  return [...new Set(tags.map((tag) => normalizeMemoryText(tag)).filter(Boolean))].sort();
+}
+function buildMemoryKey(entry) {
+  return `${normalizeMemoryText(entry.category)}::${normalizeMemoryText(entry.title)}`;
+}
+function buildFingerprint(entry) {
+  return `${buildMemoryKey(entry)}::${normalizeMemoryText(entry.content)}`;
+}
+function toIsoDate(dateValue) {
+  const parsed = dateValue ? new Date(dateValue) : /* @__PURE__ */ new Date();
+  return Number.isNaN(parsed.getTime()) ? (/* @__PURE__ */ new Date()).toISOString() : parsed.toISOString();
+}
+function ageInDays(isoDate) {
+  const dt = new Date(isoDate);
+  if (Number.isNaN(dt.getTime())) return 0;
+  return Math.floor((Date.now() - dt.getTime()) / (1e3 * 60 * 60 * 24));
+}
+function canonicalizeEntry(raw) {
+  const title = typeof raw.title === "string" ? normalizeWhitespace(raw.title) : "";
+  const content = typeof raw.content === "string" ? normalizeWhitespace(raw.content) : "";
+  if (!title || !content) return null;
+  const category = typeof raw.category === "string" && raw.category.trim() ? normalizeMemoryText(raw.category) : "general";
+  const createdAt = toIsoDate(raw.createdAt);
+  const updatedAt = raw.updatedAt ? toIsoDate(raw.updatedAt) : void 0;
+  const id = typeof raw.id === "string" && raw.id.trim() ? raw.id.trim() : `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const tags = normalizeTags(Array.isArray(raw.tags) ? raw.tags.filter((tag) => typeof tag === "string") : []);
+  const status = raw.status === "stale" ? "stale" : "active";
+  const fingerprint = buildFingerprint({ title, content, category });
+  return {
+    id,
+    createdAt,
+    updatedAt,
+    title,
+    content,
+    category,
+    tags,
+    fingerprint,
+    status,
+    staleReason: typeof raw.staleReason === "string" ? raw.staleReason : void 0,
+    supersedesId: typeof raw.supersedesId === "string" ? raw.supersedesId : void 0,
+    conflictWithId: typeof raw.conflictWithId === "string" ? raw.conflictWithId : void 0
+  };
+}
+function sortByRecencyDesc(a, b) {
+  const aTime = new Date(a.updatedAt ?? a.createdAt).getTime();
+  const bTime = new Date(b.updatedAt ?? b.createdAt).getTime();
+  return bTime - aTime;
+}
+function applyStalePolicy(entries, ttlDays) {
+  const effectiveTtl = ttlDays ?? MEMORY_STALE_DAYS;
+  const byKey = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const key = buildMemoryKey(entry);
+    const list = byKey.get(key) ?? [];
+    list.push(entry);
+    byKey.set(key, list);
+  }
+  for (const [, list] of byKey) {
+    list.sort(sortByRecencyDesc);
+    let activeSeen = false;
+    for (const entry of list) {
+      if (entry.status === "stale") continue;
+      if (!activeSeen) {
+        activeSeen = true;
+        continue;
+      }
+      entry.status = "stale";
+      entry.staleReason = entry.staleReason ?? "superseded-by-newer-entry";
+      entry.updatedAt = toIsoDate(entry.updatedAt);
+    }
+  }
+  for (const entry of entries) {
+    if (entry.status === "stale") continue;
+    if (ageInDays(entry.updatedAt ?? entry.createdAt) > effectiveTtl) {
+      entry.status = "stale";
+      entry.staleReason = entry.staleReason ?? `auto-stale-${effectiveTtl}d`;
+      entry.updatedAt = toIsoDate(entry.updatedAt);
+    }
+  }
+  return entries;
+}
+function markNearDuplicates(entries, threshold) {
+  const byKey = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const key = buildMemoryKey(entry);
+    const list = byKey.get(key) ?? [];
+    list.push(entry);
+    byKey.set(key, list);
+  }
+  let marked = 0;
+  for (const [, list] of byKey) {
+    const active = list.filter((e) => e.status !== "stale").sort(sortByRecencyDesc);
+    for (let i = 0; i < active.length; i++) {
+      for (let j = i + 1; j < active.length; j++) {
+        const newer = active[i];
+        const older = active[j];
+        if ((newer.fingerprint ?? buildFingerprint(newer)) !== (older.fingerprint ?? buildFingerprint(older)) && jaccardSimilarity(newer.content, older.content) >= threshold) {
+          older.status = "stale";
+          older.staleReason = "near-duplicate";
+          older.updatedAt = toIsoDate(older.updatedAt);
+          marked += 1;
+        }
+      }
+    }
+  }
+  return marked;
+}
+function dedupeEntries(entries) {
+  const seen = /* @__PURE__ */ new Map();
+  const ordered = [...entries].sort(sortByRecencyDesc);
+  for (const entry of ordered) {
+    const dedupeKey = `${entry.fingerprint ?? buildFingerprint(entry)}::${entry.status ?? "active"}`;
+    if (!seen.has(dedupeKey)) {
+      seen.set(dedupeKey, entry);
+      continue;
+    }
+    const kept = seen.get(dedupeKey);
+    kept.tags = normalizeTags([...kept.tags, ...entry.tags]);
+  }
+  return [...seen.values()].sort(sortByRecencyDesc);
+}
+function serializeEntries(entries) {
+  return entries.map((entry) => JSON.stringify(entry)).join("\n") + (entries.length > 0 ? "\n" : "");
+}
+function writeMemoryEntriesAtomic(entries) {
+  writeTextAtomic(getMemoryFilePath(), serializeEntries(entries));
+}
+function readMemoryEntries() {
+  ensureMemoryStore();
+  const file = getMemoryFilePath();
+  const content = fs3.readFileSync(file, "utf-8");
+  const lines = content.split("\n").map((line) => line.trim()).filter(Boolean);
+  const entries = [];
+  let malformedCount = 0;
+  for (const line of lines) {
+    try {
+      const parsed = JSON.parse(line);
+      const canonical = canonicalizeEntry(parsed);
+      if (canonical) entries.push(canonical);
+      else malformedCount += 1;
+    } catch {
+      malformedCount += 1;
+    }
+  }
+  const { ttlDays, nearDuplicateThreshold } = readMemoryConfig();
+  const deduped = dedupeEntries(entries);
+  markNearDuplicates(deduped, nearDuplicateThreshold);
+  return {
+    entries: applyStalePolicy(deduped, ttlDays),
+    malformedCount
+  };
+}
+function recoverMalformedMemoryIfNeeded(result) {
+  if (result.malformedCount <= 0) return;
+  writeMemoryEntriesAtomic(result.entries);
+}
+function getMemoryGuidelines() {
+  const guidelines = readAiOsFile("context/memory.md");
+  return guidelines || "No memory guidelines found. Re-run AI OS generation to create .github/ai-os/context/memory.md.";
+}
+function getRepoMemory(query, category, limit) {
+  const { entries, malformedCount } = readMemoryEntries();
+  const q = (query ?? "").trim().toLowerCase();
+  const c = (category ?? "").trim().toLowerCase();
+  const cap = Math.max(1, Math.min(limit ?? 10, 50));
+  const filtered = entries.filter((entry) => {
+    if (c && entry.category.toLowerCase() !== c) return false;
+    if (!q) return true;
+    const haystack = [entry.title, entry.content, entry.category, ...entry.tags].join(" ").toLowerCase();
+    return haystack.includes(q);
+  }).slice(0, cap);
+  if (filtered.length === 0) {
+    return "No repository memory entries found for the provided filters.";
+  }
+  const activeCount = entries.filter((entry) => entry.status !== "stale").length;
+  const staleCount = entries.length - activeCount;
+  const lines = [
+    "## Repository Memory",
+    "",
+    `- Total entries: ${entries.length}`,
+    `- Active: ${activeCount}`,
+    `- Stale: ${staleCount}`
+  ];
+  if (malformedCount > 0) {
+    lines.push(`- Malformed lines skipped: ${malformedCount} (recovery is applied on next write)`);
+  }
+  for (const entry of filtered) {
+    lines.push("");
+    const state = entry.status === "stale" ? "stale" : "active";
+    lines.push(`- **${entry.title}** [${entry.category}] (${state})`);
+    lines.push(`  - Created: ${entry.createdAt}`);
+    lines.push(`  - Updated: ${entry.updatedAt ?? entry.createdAt}`);
+    if (entry.tags.length > 0) {
+      lines.push(`  - Tags: ${entry.tags.join(", ")}`);
+    }
+    if (entry.staleReason) {
+      lines.push(`  - Stale reason: ${entry.staleReason}`);
+    }
+    if (entry.conflictWithId) {
+      lines.push(`  - Conflict marker: supersedes ${entry.conflictWithId}`);
+    }
+    lines.push(`  - ${entry.content}`);
+  }
+  return lines.join("\n");
+}
+function rememberRepoFact(title, content, category, tags) {
+  const trimmedTitle = title.trim();
+  const trimmedContent = content.trim();
+  if (!trimmedTitle || !trimmedContent) {
+    return "Both title and content are required to store memory.";
+  }
+  try {
+    return withMemoryLock(() => {
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const incoming = canonicalizeEntry({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        createdAt: now,
+        updatedAt: now,
+        title: trimmedTitle,
+        content: trimmedContent,
+        category: category?.trim() || "general",
+        tags: (tags ?? "").split(",").map((tag) => tag.trim()),
+        status: "active"
+      });
+      if (!incoming) {
+        return "Invalid memory payload. Title and content are required.";
+      }
+      const parsed = readMemoryEntries();
+      const entries = parsed.entries;
+      recoverMalformedMemoryIfNeeded(parsed);
+      const key = buildMemoryKey(incoming);
+      const sameKey = entries.filter((entry) => buildMemoryKey(entry) === key).sort(sortByRecencyDesc);
+      const sameFingerprint = sameKey.find((entry) => (entry.fingerprint ?? buildFingerprint(entry)) === incoming.fingerprint);
+      if (sameFingerprint) {
+        const mergedTags = normalizeTags([...sameFingerprint.tags, ...incoming.tags]);
+        const tagsChanged = mergedTags.length !== sameFingerprint.tags.length;
+        if (tagsChanged) {
+          sameFingerprint.tags = mergedTags;
+          sameFingerprint.updatedAt = now;
+          writeMemoryEntriesAtomic(dedupeEntries(applyStalePolicy(entries)));
+          return `Updated memory tags for existing fact: ${sameFingerprint.title} (${sameFingerprint.category})`;
+        }
+        return `Skipped duplicate memory fact: ${sameFingerprint.title} (${sameFingerprint.category})`;
+      }
+      const currentActive = sameKey.find((entry) => entry.status !== "stale");
+      if (currentActive) {
+        currentActive.status = "stale";
+        currentActive.staleReason = "superseded-by-conflicting-update";
+        currentActive.updatedAt = now;
+        incoming.supersedesId = currentActive.id;
+        incoming.conflictWithId = currentActive.id;
+      }
+      entries.push(incoming);
+      const normalized = dedupeEntries(applyStalePolicy(entries));
+      writeMemoryEntriesAtomic(normalized);
+      if (currentActive) {
+        return `Stored memory entry with conflict marker: ${incoming.title} (${incoming.category})`;
+      }
+      return `Stored memory entry: ${incoming.title} (${incoming.category})`;
+    });
+  } catch (err) {
+    return `Failed to store memory entry: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+function syncHostedMemory() {
+  const { entries } = readMemoryEntries();
+  const activeEntries = entries.filter((e) => e.status !== "stale");
+  const lines = [
+    "## Sync Hosted Memory \u2192 memory.jsonl",
+    "",
+    "This tool cannot access Copilot's hosted memory directly.",
+    "Follow these steps to mirror durable facts into `.github/ai-os/memory/memory.jsonl`:",
+    "",
+    "1. Review your current hosted/in-context memory for facts about this project.",
+    "2. For each fact not already in `memory.jsonl` (listed below), call `remember_repo_fact`.",
+    "3. Use categories: architecture, conventions, build, testing, security, pitfalls, decisions.",
+    "",
+    `**Currently in memory.jsonl:** ${activeEntries.length} active entries`
+  ];
+  if (activeEntries.length > 0) {
+    lines.push("");
+    lines.push("**Existing active entries (do not duplicate):");
+    for (const entry of activeEntries.slice(0, 20)) {
+      lines.push(`- [${entry.category}] ${entry.title}`);
+    }
+    if (activeEntries.length > 20) {
+      lines.push(`- \u2026 and ${activeEntries.length - 20} more`);
+    }
+  }
+  lines.push("");
+  lines.push("**Example call to add a missing fact:**");
+  lines.push("```");
+  lines.push("remember_repo_fact(");
+  lines.push('  title: "Your fact title",');
+  lines.push('  content: "Detailed description of the fact or decision",');
+  lines.push('  category: "conventions",');
+  lines.push('  tags: "tag1,tag2"');
+  lines.push(")");
+  lines.push("```");
+  return lines.join("\n");
+}
+function pruneMemory() {
+  try {
+    return withMemoryLock(() => {
+      ensureMemoryStore();
+      const file = getMemoryFilePath();
+      const content = fs3.readFileSync(file, "utf-8");
+      const rawLines = content.split("\n").map((line) => line.trim()).filter(Boolean);
+      const rawEntries = [];
+      let malformedCount = 0;
+      for (const line of rawLines) {
+        try {
+          const parsed = JSON.parse(line);
+          const canonical = canonicalizeEntry(parsed);
+          if (canonical) rawEntries.push(canonical);
+          else malformedCount += 1;
+        } catch {
+          malformedCount += 1;
+        }
+      }
+      const totalBefore = rawEntries.length;
+      const { ttlDays, nearDuplicateThreshold } = readMemoryConfig();
+      const deduped = dedupeEntries(rawEntries);
+      const nearDuplicatesMarked = markNearDuplicates(deduped, nearDuplicateThreshold);
+      const withStalePolicy = applyStalePolicy(deduped, ttlDays);
+      const staleCount = withStalePolicy.filter((e) => e.status === "stale").length;
+      const activeEntries = withStalePolicy.filter((e) => e.status !== "stale");
+      writeMemoryEntriesAtomic(activeEntries);
+      const summary = {
+        totalBefore,
+        activeAfter: activeEntries.length,
+        staleMarked: staleCount,
+        nearDuplicatesMarked,
+        pruned: totalBefore - activeEntries.length,
+        malformedSkipped: malformedCount
+      };
+      const lines = [
+        "## Memory Prune Complete",
+        "",
+        `- Entries before prune: ${summary.totalBefore}`,
+        `- Active entries kept:  ${summary.activeAfter}`,
+        `- Stale entries removed: ${summary.pruned}`,
+        `  - Near-duplicates removed: ${summary.nearDuplicatesMarked}`,
+        `  - TTL-expired / superseded: ${summary.staleMarked - summary.nearDuplicatesMarked}`
+      ];
+      if (summary.malformedSkipped > 0) {
+        lines.push(`- Malformed lines skipped: ${summary.malformedSkipped}`);
+      }
+      lines.push("", `TTL policy: ${ttlDays} days | Near-duplicate threshold: ${nearDuplicateThreshold}`);
+      return lines.join("\n");
+    });
+  } catch (err) {
+    return `Failed to prune memory: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+// src/mcp-server/session.ts
+import fs4 from "node:fs";
+var DEFAULT_WATCHDOG_THRESHOLD = 8;
+var SESSION_CHECKPOINTS_CAP = 100;
+var SESSION_FAILURES_CAP = 50;
+function normalizeFailureText(value) {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+function readRuntimeState() {
+  const filePath = getRuntimeStatePath();
+  const fallback = {
+    toolCallCount: 0,
+    lastWatchdogCheckpointCount: 0,
+    threshold: DEFAULT_WATCHDOG_THRESHOLD,
+    updatedAt: (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (!fs4.existsSync(filePath)) return fallback;
+  try {
+    const raw = JSON.parse(fs4.readFileSync(filePath, "utf-8"));
+    const threshold = typeof raw.threshold === "number" && raw.threshold >= 1 ? Math.floor(raw.threshold) : DEFAULT_WATCHDOG_THRESHOLD;
+    return {
+      toolCallCount: typeof raw.toolCallCount === "number" ? Math.max(0, Math.floor(raw.toolCallCount)) : 0,
+      lastWatchdogCheckpointCount: typeof raw.lastWatchdogCheckpointCount === "number" ? Math.max(0, Math.floor(raw.lastWatchdogCheckpointCount)) : 0,
+      threshold,
+      updatedAt: typeof raw.updatedAt === "string" && raw.updatedAt.trim() ? raw.updatedAt : (/* @__PURE__ */ new Date()).toISOString()
+    };
+  } catch {
+    return fallback;
+  }
+}
+function writeRuntimeState(state) {
+  writeTextAtomic(getRuntimeStatePath(), JSON.stringify(state, null, 2));
+}
+function getActivePlan() {
+  ensureSessionMemoryStore();
+  const filePath = getActivePlanPath();
+  if (!fs4.existsSync(filePath)) {
+    return "No active session plan found. Create one with `upsert_active_plan`.";
+  }
+  try {
+    const plan = JSON.parse(fs4.readFileSync(filePath, "utf-8"));
+    const lines = [
+      "## Active Plan",
+      "",
+      `- Objective: ${plan.objective}`,
+      `- Acceptance Criteria: ${plan.acceptanceCriteria}`,
+      `- Status: ${plan.status}`,
+      `- Created: ${plan.createdAt}`,
+      `- Updated: ${plan.updatedAt}`
+    ];
+    if (plan.currentStep) lines.push(`- Current Step: ${plan.currentStep}`);
+    if (plan.nextStep) lines.push(`- Next Step: ${plan.nextStep}`);
+    lines.push("- Blockers:");
+    if (plan.blockers.length === 0) {
+      lines.push("  - none");
+    } else {
+      for (const blocker of plan.blockers) {
+        lines.push(`  - ${blocker}`);
+      }
+    }
+    return lines.join("\n");
+  } catch {
+    return "Failed to read active plan. Recreate it with `upsert_active_plan`.";
+  }
+}
+function upsertActivePlan(objective, acceptanceCriteria, status, currentStep, nextStep, blockers) {
+  const trimmedObjective = objective.trim();
+  const trimmedCriteria = acceptanceCriteria.trim();
+  if (!trimmedObjective || !trimmedCriteria) {
+    return "Both objective and acceptanceCriteria are required to upsert active plan.";
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const normalizedStatus = status === "paused" || status === "completed" ? status : "active";
+  const blockerList = (blockers ?? "").split(/[,\n]/).map((item) => item.trim()).filter(Boolean);
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const filePath = getActivePlanPath();
+      const existing = fs4.existsSync(filePath) ? JSON.parse(fs4.readFileSync(filePath, "utf-8")) : {};
+      const plan = {
+        objective: trimmedObjective,
+        acceptanceCriteria: trimmedCriteria,
+        status: normalizedStatus,
+        currentStep: currentStep?.trim() || existing.currentStep,
+        nextStep: nextStep?.trim() || existing.nextStep,
+        blockers: blockerList.length > 0 ? blockerList : existing.blockers ?? [],
+        createdAt: existing.createdAt ?? now,
+        updatedAt: now
+      };
+      writeTextAtomic(filePath, JSON.stringify(plan, null, 2));
+      return `Active plan upserted (${plan.status}).`;
+    });
+  } catch (err) {
+    return `Failed to upsert active plan: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+function appendCheckpoint(title, status, notes, toolCallCount) {
+  const trimmedTitle = title.trim();
+  if (!trimmedTitle) {
+    return "Checkpoint title is required.";
+  }
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  const normalizedStatus = status === "closed" ? "closed" : "open";
+  const entry = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+    title: trimmedTitle,
+    status: normalizedStatus,
+    notes: notes?.trim() || void 0,
+    toolCallCount: typeof toolCallCount === "number" ? toolCallCount : void 0,
+    createdAt: now,
+    closedAt: normalizedStatus === "closed" ? now : void 0
+  };
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const filePath = getCheckpointLogPath();
+      fs4.appendFileSync(filePath, `${JSON.stringify(entry)}
+`, "utf-8");
+      trimJsonlFileToCap(filePath, SESSION_CHECKPOINTS_CAP);
+      return `Checkpoint appended: ${entry.id}`;
+    });
+  } catch (err) {
+    return `Failed to append checkpoint: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+function closeCheckpoint(checkpointId, notes) {
+  const id = checkpointId.trim();
+  if (!id) {
+    return "checkpointId is required.";
+  }
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const filePath = getCheckpointLogPath();
+      const entries = readJsonlFile(filePath);
+      const index = entries.findIndex((entry) => entry.id === id);
+      if (index < 0) {
+        return `Checkpoint not found: ${id}`;
+      }
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      const existingNotes = entries[index].notes?.trim();
+      const closingNotes = notes?.trim();
+      const mergedNotes = [existingNotes, closingNotes].filter(Boolean).join(" | ");
+      entries[index] = {
+        ...entries[index],
+        status: "closed",
+        notes: mergedNotes || void 0,
+        closedAt: now
+      };
+      writeTextAtomic(filePath, entries.map((entry) => JSON.stringify(entry)).join("\n") + (entries.length ? "\n" : ""));
+      return `Checkpoint closed: ${id}`;
+    });
+  } catch (err) {
+    return `Failed to close checkpoint: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+function recordFailurePattern(tool, errorSignature, rootCause, attemptedFix, outcome, confidence) {
+  const trimmedTool = tool.trim();
+  const trimmedSignature = errorSignature.trim();
+  const trimmedRootCause = rootCause.trim();
+  const trimmedFix = attemptedFix.trim();
+  if (!trimmedTool || !trimmedSignature || !trimmedRootCause || !trimmedFix) {
+    return "tool, errorSignature, rootCause, and attemptedFix are required to record failure pattern.";
+  }
+  const normalizedOutcome = outcome === "resolved" || outcome === "partial" ? outcome : "unresolved";
+  const normalizedConfidence = typeof confidence === "number" ? Math.max(0, Math.min(1, confidence)) : 0.5;
+  const now = (/* @__PURE__ */ new Date()).toISOString();
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const filePath = getFailureLedgerPath();
+      const rows = readJsonlFile(filePath);
+      const key = [
+        normalizeFailureText(trimmedTool),
+        normalizeFailureText(trimmedSignature),
+        normalizeFailureText(trimmedRootCause),
+        normalizeFailureText(trimmedFix)
+      ].join("::");
+      const existing = rows.find((entry2) => [
+        normalizeFailureText(entry2.tool),
+        normalizeFailureText(entry2.errorSignature),
+        normalizeFailureText(entry2.rootCause),
+        normalizeFailureText(entry2.attemptedFix)
+      ].join("::") === key);
+      if (existing) {
+        existing.occurrences += 1;
+        existing.lastSeenAt = now;
+        existing.outcome = normalizedOutcome;
+        existing.confidence = normalizedConfidence;
+        writeTextAtomic(filePath, rows.map((entry2) => JSON.stringify(entry2)).join("\n") + (rows.length ? "\n" : ""));
+        return `Failure pattern updated: ${existing.id} (occurrences=${existing.occurrences})`;
+      }
+      const entry = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        tool: trimmedTool,
+        errorSignature: trimmedSignature,
+        rootCause: trimmedRootCause,
+        attemptedFix: trimmedFix,
+        outcome: normalizedOutcome,
+        confidence: normalizedConfidence,
+        occurrences: 1,
+        firstSeenAt: now,
+        lastSeenAt: now
+      };
+      rows.push(entry);
+      trimJsonlFileToCap(filePath, SESSION_FAILURES_CAP);
+      writeTextAtomic(filePath, rows.map((item) => JSON.stringify(item)).join("\n") + "\n");
+      return `Failure pattern recorded: ${entry.id}`;
+    });
+  } catch (err) {
+    return `Failed to record failure pattern: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+function compactSessionContext() {
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const activePlanPath = getActivePlanPath();
+      const checkpointsPath = getCheckpointLogPath();
+      const failurePath = getFailureLedgerPath();
+      const outputPath = getCompactContextPath();
+      const plan = fs4.existsSync(activePlanPath) ? JSON.parse(fs4.readFileSync(activePlanPath, "utf-8")) : null;
+      const checkpoints = readJsonlFile(checkpointsPath).slice(-12).sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+      const failures = readJsonlFile(failurePath).slice(-12).sort((a, b) => new Date(b.lastSeenAt).getTime() - new Date(a.lastSeenAt).getTime());
+      const lines = [
+        "# Compact Session Context",
+        "",
+        `Generated: ${(/* @__PURE__ */ new Date()).toISOString()}`,
+        "",
+        "## Active Goal"
+      ];
+      if (!plan) {
+        lines.push("- No active plan yet.");
+      } else {
+        lines.push(`- Objective: ${plan.objective}`);
+        lines.push(`- Acceptance Criteria: ${plan.acceptanceCriteria}`);
+        lines.push(`- Status: ${plan.status}`);
+        if (plan.currentStep) lines.push(`- Current Step: ${plan.currentStep}`);
+        if (plan.nextStep) lines.push(`- Next Step: ${plan.nextStep}`);
+        lines.push("- Blockers:");
+        if (plan.blockers.length === 0) {
+          lines.push("  - none");
+        } else {
+          for (const blocker of plan.blockers) lines.push(`  - ${blocker}`);
+        }
+      }
+      lines.push("", "## Open Checkpoints");
+      const openCheckpoints = checkpoints.filter((entry) => entry.status === "open");
+      if (openCheckpoints.length === 0) {
+        lines.push("- none");
+      } else {
+        for (const item of openCheckpoints) {
+          lines.push(`- ${item.id}: ${item.title}`);
+          if (item.notes) lines.push(`  - notes: ${item.notes}`);
+          if (typeof item.toolCallCount === "number") lines.push(`  - tool calls: ${item.toolCallCount}`);
+        }
+      }
+      lines.push("", "## Recent Failure Patterns");
+      if (failures.length === 0) {
+        lines.push("- none");
+      } else {
+        for (const item of failures.slice(0, 8)) {
+          lines.push(`- ${item.tool}: ${item.errorSignature} (occurrences=${item.occurrences}, outcome=${item.outcome})`);
+          lines.push(`  - root cause: ${item.rootCause}`);
+          lines.push(`  - attempted fix: ${item.attemptedFix}`);
+        }
+      }
+      lines.push("", "## Next Action Hint");
+      if (plan?.nextStep) {
+        lines.push(`- Resume from: ${plan.nextStep}`);
+      } else {
+        lines.push("- Define next step with `upsert_active_plan` to avoid goal drift.");
+      }
+      writeTextAtomic(outputPath, lines.join("\n") + "\n");
+      return `Compact context written to .github/ai-os/memory/session/compact-context.md
+
+${lines.join("\n")}`;
+    });
+  } catch (err) {
+    return `Failed to compact session context: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+function recordToolCallAndRunWatchdog(toolName) {
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const state = readRuntimeState();
+      const now = (/* @__PURE__ */ new Date()).toISOString();
+      state.toolCallCount += 1;
+      state.updatedAt = now;
+      const thresholdReached = state.toolCallCount - state.lastWatchdogCheckpointCount >= state.threshold;
+      if (!thresholdReached) {
+        writeRuntimeState(state);
+        return null;
+      }
+      const checkpoint = {
+        id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        title: `Goal watchdog checkpoint @${state.toolCallCount} calls`,
+        status: "open",
+        notes: `Auto-checkpoint after ${state.threshold} tool calls. Re-read active plan and confirm alignment. Trigger tool: ${toolName}`,
+        toolCallCount: state.toolCallCount,
+        createdAt: now
+      };
+      const checkpointsPath = getCheckpointLogPath();
+      fs4.appendFileSync(checkpointsPath, `${JSON.stringify(checkpoint)}
+`, "utf-8");
+      trimJsonlFileToCap(checkpointsPath, SESSION_CHECKPOINTS_CAP);
+      state.lastWatchdogCheckpointCount = state.toolCallCount;
+      writeRuntimeState(state);
+      return `Watchdog checkpoint created (${checkpoint.id}) after ${state.toolCallCount} tool calls.`;
+    });
+  } catch {
+    return null;
+  }
+}
+function setWatchdogThreshold(threshold) {
+  const normalized = Math.max(1, Math.min(100, Math.floor(threshold)));
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const state = readRuntimeState();
+      state.threshold = normalized;
+      state.updatedAt = (/* @__PURE__ */ new Date()).toISOString();
+      writeRuntimeState(state);
+      return `Watchdog threshold updated to ${normalized} tool calls.`;
+    });
+  } catch (err) {
+    return `Failed to set watchdog threshold: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+function resetSessionState() {
+  try {
+    return withSessionLock(() => {
+      ensureSessionMemoryStore();
+      const removed = [];
+      const planPath = getActivePlanPath();
+      if (fs4.existsSync(planPath)) {
+        fs4.unlinkSync(planPath);
+        removed.push("active-plan.json");
+      }
+      const checkpointsPath = getCheckpointLogPath();
+      if (fs4.existsSync(checkpointsPath)) {
+        writeTextAtomic(checkpointsPath, "");
+        removed.push("checkpoints.jsonl (truncated)");
+      }
+      const failurePath = getFailureLedgerPath();
+      if (fs4.existsSync(failurePath)) {
+        writeTextAtomic(failurePath, "");
+        removed.push("failure-ledger.jsonl (truncated)");
+      }
+      const runtimePath = getRuntimeStatePath();
+      if (fs4.existsSync(runtimePath)) {
+        fs4.unlinkSync(runtimePath);
+        removed.push("runtime-state.json");
+      }
+      const compactPath = getCompactContextPath();
+      if (fs4.existsSync(compactPath)) {
+        fs4.unlinkSync(compactPath);
+        removed.push("compact-context.md");
+      }
+      if (removed.length === 0) {
+        return "Session state was already empty \u2014 nothing to reset.";
+      }
+      return `Session state reset. Cleared: ${removed.join(", ")}. Durable repo memory (memory.jsonl) was not modified.`;
+    });
+  } catch (err) {
+    return `Failed to reset session state: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+// src/mcp-server/search.ts
+import { spawnSync as spawnSync2 } from "node:child_process";
+import fs5 from "node:fs";
+import path5 from "node:path";
+function searchFiles(query, filePattern, caseSensitive = false) {
+  try {
+    const args = ["--yes", "ripgrep"];
+    if (!caseSensitive) args.push("--ignore-case");
+    if (filePattern) args.push("-g", filePattern);
+    args.push("--line-number", "--max-count=5", query, ROOT);
+    const result = spawnSync2("npx", args, { maxBuffer: 512 * 1024, timeout: 1e4 });
+    if (result.error) return "No results found";
+    const out = result.stdout?.toString() ?? "";
+    return out.slice(0, 8e3);
+  } catch {
+    return "No results found";
+  }
+}
+var IGNORE_DIRS = /* @__PURE__ */ new Set([
+  "node_modules",
+  ".git",
+  ".next",
+  ".nuxt",
+  "dist",
+  "build",
+  "out",
+  "__pycache__",
+  ".venv",
+  "venv",
+  "target",
+  "vendor",
+  "coverage",
+  ".gradle",
+  "bin",
+  "obj",
+  ".vs",
+  "packages",
+  ".cache"
+]);
+function buildFileTree(dir, depth = 0, maxDepth = 4) {
+  if (depth > maxDepth) return [];
+  const prefix = "  ".repeat(depth);
+  const lines = [];
+  try {
+    const entries = fs5.readdirSync(dir, { withFileTypes: true }).filter((e) => !e.name.startsWith(".") || e.name === ".github").filter((e) => !IGNORE_DIRS.has(e.name)).sort((a, b) => {
+      if (a.isDirectory() !== b.isDirectory()) return a.isDirectory() ? -1 : 1;
+      return a.name.localeCompare(b.name);
+    });
+    for (const entry of entries) {
+      if (entry.isDirectory()) {
+        lines.push(`${prefix}${entry.name}/`);
+        lines.push(...buildFileTree(path5.join(dir, entry.name), depth + 1, maxDepth));
+      } else {
+        lines.push(`${prefix}${entry.name}`);
+      }
+    }
+  } catch {
+  }
+  return lines;
+}
+
+// src/mcp-server/project-introspection.ts
+import { spawnSync as spawnSync3 } from "node:child_process";
+import fs6 from "node:fs";
+import path6 from "node:path";
+function getPrismaSchema() {
+  const candidates = ["prisma/schema.prisma", "schema.prisma", "db/schema.prisma"];
+  for (const rel of candidates) {
+    const abs = path6.join(ROOT, rel);
+    if (fs6.existsSync(abs)) {
+      return fs6.readFileSync(abs, "utf-8");
+    }
+  }
+  return "Prisma schema not found";
+}
+function getTrpcProcedures() {
+  const candidates = ["src/trpc/index.ts", "src/server/trpc.ts", "server/trpc.ts"];
+  for (const rel of candidates) {
+    const abs = path6.join(ROOT, rel);
+    if (!fs6.existsSync(abs)) continue;
+    const content = fs6.readFileSync(abs, "utf-8");
+    const lines = content.split("\n");
+    const procedures = [];
+    for (const line of lines) {
+      const m = line.match(/^\s+(\w+):\s+(public|private)Procedure/);
+      if (m) procedures.push(`- ${m[1]} (${m[2]})`);
+    }
+    if (procedures.length > 0) {
+      return `**tRPC Procedures** (from ${rel}):
+${procedures.join("\n")}`;
+    }
+    return `Found router at ${rel} but could not parse procedures. First 50 lines:
+\`\`\`
+${lines.slice(0, 50).join("\n")}
+\`\`\``;
+  }
+  return "tRPC router not found";
+}
+function getApiRoutes(filter) {
+  const routes = /* @__PURE__ */ new Set();
+  function addRoute(route) {
+    const trimmed = route.trim();
+    if (!trimmed) return;
+    routes.add(trimmed);
+  }
+  const apiDir = path6.join(ROOT, "src/app/api");
+  function scanNextApiDir(dir, prefix = "") {
+    try {
+      const entries = fs6.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        if (entry.isDirectory()) {
+          scanNextApiDir(path6.join(dir, entry.name), `${prefix}/${entry.name}`);
+          continue;
+        }
+        if (entry.name !== "route.ts" && entry.name !== "route.js") continue;
+        const content = fs6.readFileSync(path6.join(dir, entry.name), "utf-8");
+        const methods = ["GET", "POST", "PUT", "PATCH", "DELETE"].filter(
+          (m) => new RegExp(`export\\s+(?:async\\s+)?function\\s+${m}`).test(content)
+        );
+        if (methods.length === 0) continue;
+        const route = prefix.replace(/\/\[([^\]]+)\]/g, "/:$1");
+        addRoute(`${methods.join(", ")} ${route}`);
+      }
+    } catch {
+    }
+  }
+  if (fs6.existsSync(apiDir)) {
+    scanNextApiDir(apiDir, "/api");
+  }
+  const scanPatterns = [
+    {
+      glob: "*.py",
+      patterns: [
+        /@(app|router)\.(get|post|put|patch|delete)\(['"]([^'"]+)['"]/g,
+        /path\(['"]([^'"]+)['"],/g
+      ]
+    },
+    {
+      glob: "*.java",
+      patterns: [
+        /@(?:Get|Post|Put|Patch|Delete|Request)Mapping\(([^)]*)\)/g
+      ]
+    },
+    {
+      glob: "*.go",
+      patterns: [
+        /\.(GET|POST|PUT|PATCH|DELETE)\("([^"]+)"/g,
+        /HandleFunc\("([^"]+)"/g
+      ]
+    },
+    {
+      glob: "*.rs",
+      patterns: [
+        /#\[(get|post|put|patch|delete)\("([^"]+)"\)\]/g,
+        /route\("([^"]+)",\s*(get|post|put|patch|delete)/g
+      ]
+    },
+    {
+      glob: "*.{ts,js}",
+      patterns: [
+        /router\.(get|post|put|patch|delete)\(['"]([^'"]+)['"]/g,
+        /app\.(get|post|put|patch|delete)\(['"]([^'"]+)['"]/g
+      ]
+    }
+  ];
+  for (const scan of scanPatterns) {
+    try {
+      const result2 = spawnSync3("npx", ["--yes", "ripgrep", "--files", "-g", scan.glob, ROOT], {
+        maxBuffer: 1024 * 1024,
+        timeout: 12e3
+      });
+      const files = (result2.stdout?.toString() ?? "").split("\n").filter(Boolean);
+      for (const file of files.slice(0, 300)) {
+        let content = "";
+        try {
+          content = fs6.readFileSync(file, "utf-8");
+        } catch {
+          continue;
+        }
+        for (const pattern of scan.patterns) {
+          const matches = content.matchAll(pattern);
+          for (const match of matches) {
+            if (scan.glob === "*.java") {
+              const mappingArgs = match[1] ?? "";
+              const methodMatch = mappingArgs.match(/RequestMethod\.(GET|POST|PUT|PATCH|DELETE)/);
+              const method2 = methodMatch?.[1] ?? (match[0].includes("GetMapping") ? "GET" : match[0].includes("PostMapping") ? "POST" : match[0].includes("PutMapping") ? "PUT" : match[0].includes("PatchMapping") ? "PATCH" : match[0].includes("DeleteMapping") ? "DELETE" : "REQUEST");
+              const pathMatch = mappingArgs.match(/['"]([^'"]+)['"]/);
+              if (pathMatch) addRoute(`${method2} ${pathMatch[1]}`);
+              continue;
+            }
+            const method = (match[2] ?? match[1] ?? "").toString().toUpperCase();
+            const routePath = (match[3] ?? match[2] ?? match[1] ?? "").toString();
+            if (!routePath.startsWith("/")) continue;
+            if (["GET", "POST", "PUT", "PATCH", "DELETE"].includes(method)) {
+              addRoute(`${method} ${routePath}`);
+            } else {
+              addRoute(`ROUTE ${routePath}`);
+            }
+          }
+        }
+      }
+    } catch {
+    }
+  }
+  const result = [...routes].sort();
+  const filtered = filter ? result.filter((route) => route.toLowerCase().includes(filter.toLowerCase())) : result;
+  return filtered.length > 0 ? `**API Routes:**
+${filtered.join("\n")}` : "No API routes found";
+}
+function getEnvVars() {
+  const envExamplePaths = [".env.example", ".env.local.example", ".env.sample", ".env.template"];
+  let envContent = "";
+  for (const p of envExamplePaths) {
+    if (fs6.existsSync(path6.join(ROOT, p))) {
+      envContent = fs6.readFileSync(path6.join(ROOT, p), "utf-8");
+      break;
+    }
+  }
+  const codeEnvVars = /* @__PURE__ */ new Set();
+  const extractors = [
+    { regex: /process\.env\.(\w+)/g, fileGlob: "*.{ts,tsx,js,jsx,mjs,cjs}" },
+    { regex: /os\.getenv\(['"]([A-Z0-9_]+)['"]/g, fileGlob: "*.py" },
+    { regex: /os\.environ\[['"]([A-Z0-9_]+)['"]\]/g, fileGlob: "*.py" },
+    { regex: /System\.getenv\(['"]([A-Z0-9_]+)['"]\)/g, fileGlob: "*.java" },
+    { regex: /os\.Getenv\(['"]([A-Z0-9_]+)['"]\)/g, fileGlob: "*.go" },
+    { regex: /std::env::var\(['"]([A-Z0-9_]+)['"]\)/g, fileGlob: "*.rs" }
+  ];
+  for (const extractor of extractors) {
+    try {
+      const result = spawnSync3("npx", ["--yes", "ripgrep", "--files", "-g", extractor.fileGlob, ROOT], {
+        maxBuffer: 1024 * 1024,
+        timeout: 1e4
+      });
+      const files = (result.stdout?.toString() ?? "").split("\n").filter(Boolean);
+      for (const file of files.slice(0, 400)) {
+        let content = "";
+        try {
+          content = fs6.readFileSync(file, "utf-8");
+        } catch {
+          continue;
+        }
+        for (const match of content.matchAll(extractor.regex)) {
+          if (match[1]) codeEnvVars.add(match[1]);
+        }
+      }
+    } catch {
+    }
+  }
+  const lines = ["**Required Environment Variables:**", ""];
+  if (envContent) {
+    lines.push("From .env.example:");
+    lines.push("```");
+    lines.push(envContent.split("\n").filter((l) => l.trim() && !l.startsWith("#")).join("\n"));
+    lines.push("```");
+  }
+  if (codeEnvVars.size > 0) {
+    lines.push("");
+    lines.push("Referenced in code:");
+    [...codeEnvVars].sort().forEach((v) => lines.push(`- ${v}`));
+  }
+  return lines.join("\n");
+}
+function getPackageInfo(packageName) {
+  const lines = [];
+  const pkgPath = path6.join(ROOT, "package.json");
+  if (fs6.existsSync(pkgPath)) {
+    const pkg = JSON.parse(fs6.readFileSync(pkgPath, "utf-8"));
+    const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
+    if (packageName && allDeps[packageName]) {
+      return `**${packageName}:** ${allDeps[packageName]}`;
+    }
+    lines.push(`**Node Package:** ${pkg.name ?? "unknown"}@${pkg.version ?? "0.0.0"}`);
+    lines.push(`**Node Engine:** ${pkg.engines?.node ?? "not specified"}`);
+    const depPairs = Object.entries(pkg.dependencies ?? {}).slice(0, 40).map(([k, v]) => `  ${k}: ${v}`);
+    if (depPairs.length > 0) {
+      lines.push("", "**Node Dependencies:**", ...depPairs);
+    }
+  }
+  const requirementsPath = path6.join(ROOT, "requirements.txt");
+  if (fs6.existsSync(requirementsPath)) {
+    const reqLines = fs6.readFileSync(requirementsPath, "utf-8").split("\n").map((line) => line.trim()).filter(Boolean).filter((line) => !line.startsWith("#"));
+    if (packageName) {
+      const found = reqLines.find((line) => line.toLowerCase().startsWith(packageName.toLowerCase()));
+      if (found) return `**${packageName}:** ${found}`;
+    }
+    lines.push("", `**Python Requirements:** ${reqLines.length} entries`);
+    lines.push(...reqLines.slice(0, 40).map((line) => `  ${line}`));
+  }
+  const pomPath = path6.join(ROOT, "pom.xml");
+  if (fs6.existsSync(pomPath)) {
+    const pom = fs6.readFileSync(pomPath, "utf-8");
+    const artifact = pom.match(/<artifactId>([^<]+)<\/artifactId>/)?.[1] ?? "unknown";
+    const version = pom.match(/<version>([^<]+)<\/version>/)?.[1] ?? "unknown";
+    lines.push("", `**Maven Project:** ${artifact}@${version}`);
+  }
+  const gradlePath = path6.join(ROOT, "build.gradle");
+  const gradleKtsPath = path6.join(ROOT, "build.gradle.kts");
+  if (fs6.existsSync(gradlePath) || fs6.existsSync(gradleKtsPath)) {
+    lines.push("", "**Gradle Build:** detected");
+  }
+  const goModPath = path6.join(ROOT, "go.mod");
+  if (fs6.existsSync(goModPath)) {
+    const goMod = fs6.readFileSync(goModPath, "utf-8");
+    const moduleName = goMod.match(/^module\s+(\S+)/m)?.[1] ?? "unknown";
+    lines.push("", `**Go Module:** ${moduleName}`);
+  }
+  const cargoPath = path6.join(ROOT, "Cargo.toml");
+  if (fs6.existsSync(cargoPath)) {
+    const cargo = fs6.readFileSync(cargoPath, "utf-8");
+    const name = cargo.match(/^name\s*=\s*"([^"]+)"/m)?.[1] ?? "unknown";
+    const version = cargo.match(/^version\s*=\s*"([^"]+)"/m)?.[1] ?? "unknown";
+    lines.push("", `**Rust Crate:** ${name}@${version}`);
+  }
+  if (lines.length === 0) {
+    return "No supported package/build manifest found (package.json, requirements.txt, pom.xml/build.gradle, go.mod, Cargo.toml).";
+  }
+  return lines.join("\n").trim();
+}
+function getFileSummary(filePath) {
+  const absPath = path6.isAbsolute(filePath) ? filePath : path6.join(ROOT, filePath);
+  try {
+    const content = fs6.readFileSync(absPath, "utf-8");
+    const lines = content.split("\n");
+    const ext = path6.extname(filePath).toLowerCase();
+    const exports = [];
+    const imports = [];
+    for (const line of lines.slice(0, 200)) {
+      if (/^export\s+(default\s+)?(function|class|const|interface|type|enum)\s+(\w+)/.test(line)) {
+        const match = line.match(/^export\s+(?:default\s+)?(?:function|class|const|interface|type|enum)\s+(\w+)/);
+        if (match) exports.push(match[1]);
+      }
+      if (ext === ".py" && /^(def|class)\s+(\w+)/.test(line)) {
+        const match = line.match(/^(def|class)\s+(\w+)/);
+        if (match) exports.push(`${match[1]} ${match[2]}`);
+      }
+      if (ext === ".go" && /^func\s+(\w+)/.test(line)) {
+        const match = line.match(/^func\s+(\w+)/);
+        if (match) exports.push(`func ${match[1]}`);
+      }
+      if (imports.length < 10 && /^import\s/.test(line)) {
+        imports.push(line.trim());
+      }
+    }
+    const summary = [
+      `**File:** \`${filePath}\``,
+      `**Size:** ${lines.length} lines`,
+      ""
+    ];
+    if (imports.length > 0) {
+      summary.push("**Key Imports:**");
+      summary.push(...imports.map((i) => `- ${i}`));
+      summary.push("");
+    }
+    if (exports.length > 0) {
+      summary.push("**Exports:**");
+      summary.push(...exports.map((e) => `- ${e}`));
+      summary.push("");
+    }
+    summary.push("**Preview (first 30 lines):**");
+    summary.push("```");
+    summary.push(...lines.slice(0, 30));
+    summary.push("```");
+    return summary.join("\n");
+  } catch {
+    return `Could not read file: ${filePath}`;
+  }
+}
+function getImpactOfChange(filePath) {
+  const newGraphPath = path6.join(ROOT, ".github", "ai-os", "context", "dependency-graph.json");
+  const legacyGraphPath = path6.join(ROOT, ".ai-os", "context", "dependency-graph.json");
+  const graphPath = fs6.existsSync(newGraphPath) ? newGraphPath : legacyGraphPath;
+  if (!fs6.existsSync(graphPath)) {
+    return "Dependency graph not found. Re-run the AI OS installer: `npx -y github:marinvch/ai-os --refresh-existing` (or the bootstrap one-liner from the README).";
+  }
+  let graph;
+  try {
+    graph = JSON.parse(fs6.readFileSync(graphPath, "utf-8"));
+  } catch {
+    return "Could not parse dependency graph.";
+  }
+  const normalized = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  const node = graph.nodes[normalized];
+  if (!node) {
+    const candidates = Object.keys(graph.nodes).filter((k) => k.includes(normalized));
+    if (candidates.length === 0) {
+      return `File "${normalized}" not found in dependency graph. It may not be a tracked source file.`;
+    }
+    if (candidates.length > 1) {
+      return `Ambiguous path "${normalized}" \u2014 did you mean one of:
+${candidates.map((c) => `- ${c}`).join("\n")}`;
+    }
+    return getImpactOfChange(candidates[0]);
+  }
+  const visited = /* @__PURE__ */ new Set();
+  const queue = [...node.importedBy];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (visited.has(current)) continue;
+    visited.add(current);
+    const n = graph.nodes[current];
+    if (n) queue.push(...n.importedBy);
+  }
+  const direct = node.importedBy;
+  const transitive = [...visited].filter((f) => !direct.includes(f));
+  const lines = [
+    `## Impact Analysis: \`${normalized}\``,
+    "",
+    `**Exports:** ${node.exports.length > 0 ? node.exports.join(", ") : "_none detected_"}`,
+    "",
+    `**Imports (${node.imports.length} direct dependencies):**`,
+    ...node.imports.map((f) => `- ${f}`),
+    "",
+    `**Directly imported by (${direct.length} files):**`,
+    ...direct.length > 0 ? direct.map((f) => `- ${f}`) : ["- _nothing imports this file_"],
+    "",
+    `**Transitively affected (${transitive.length} files):**`,
+    ...transitive.length > 0 ? transitive.map((f) => `- ${f}`) : ["- _no transitive dependents_"]
+  ];
+  return lines.join("\n");
+}
+function getDependencyChain(filePath) {
+  const newGraphPath = path6.join(ROOT, ".github", "ai-os", "context", "dependency-graph.json");
+  const legacyGraphPath = path6.join(ROOT, ".ai-os", "context", "dependency-graph.json");
+  const graphPath = fs6.existsSync(newGraphPath) ? newGraphPath : legacyGraphPath;
+  if (!fs6.existsSync(graphPath)) {
+    return "Dependency graph not found. Re-run the AI OS installer: `npx -y github:marinvch/ai-os --refresh-existing` (or the bootstrap one-liner from the README).";
+  }
+  let graph;
+  try {
+    graph = JSON.parse(fs6.readFileSync(graphPath, "utf-8"));
+  } catch {
+    return "Could not parse dependency graph.";
+  }
+  const normalized = filePath.replace(/\\/g, "/").replace(/^\.\//, "");
+  const node = graph.nodes[normalized];
+  if (!node) {
+    return `File "${normalized}" not found in dependency graph.`;
+  }
+  const lines = [
+    `## Dependency Chain: \`${normalized}\``,
+    "",
+    "### This file imports:"
+  ];
+  if (node.imports.length === 0) {
+    lines.push("- _no local imports_");
+  } else {
+    for (const imp of node.imports) {
+      const impNode = graph.nodes[imp];
+      const exports = impNode?.exports.slice(0, 5).join(", ") ?? "";
+      lines.push(`- **${imp}**${exports ? ` \u2192 exports: \`${exports}\`` : ""}`);
+    }
+  }
+  lines.push("");
+  lines.push("### This file is imported by:");
+  if (node.importedBy.length === 0) {
+    lines.push("- _nothing imports this file_");
+  } else {
+    for (const parent of node.importedBy) {
+      const parentNode = graph.nodes[parent];
+      const grandparents = parentNode?.importedBy.slice(0, 3).join(", ") ?? "";
+      lines.push(`- **${parent}**${grandparents ? ` (used by: ${grandparents})` : ""}`);
+    }
+  }
+  return lines.join("\n");
+}
+
+// src/detectors/freshness.ts
+import crypto from "node:crypto";
+import fs7 from "node:fs";
+import path7 from "node:path";
+var SNAPSHOT_PATH = ".github/ai-os/context-snapshot.json";
+function hashFile(filePath) {
+  try {
+    const content = fs7.readFileSync(filePath);
+    return crypto.createHash("sha256").update(content).digest("hex");
+  } catch {
+    return "MISSING";
+  }
+}
+function hashDirectory(dirPath) {
+  const hashes = [];
+  let count = 0;
+  function walk(dir) {
+    let entries;
+    try {
+      entries = fs7.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const entry of entries.sort((a, b) => a.name.localeCompare(b.name))) {
+      const full = path7.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        if (["node_modules", ".git", "dist", "build", "coverage", ".ai-os"].includes(entry.name)) continue;
+        walk(full);
+      } else if (entry.isFile()) {
+        hashes.push(`${full}:${hashFile(full)}`);
+        count++;
+      }
+    }
+  }
+  walk(dirPath);
+  const combined = crypto.createHash("sha256").update(hashes.join("\n")).digest("hex");
+  return { count, hash: combined };
+}
+function loadContextSnapshot(rootDir) {
+  const snapshotPath = path7.join(rootDir, SNAPSHOT_PATH);
+  if (!fs7.existsSync(snapshotPath)) return null;
+  try {
+    return JSON.parse(fs7.readFileSync(snapshotPath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+function computeFreshnessReport(rootDir) {
+  const snapshot = loadContextSnapshot(rootDir);
+  let lastGeneratedAt = null;
+  try {
+    const configPath = path7.join(rootDir, ".github", "ai-os", "config.json");
+    if (fs7.existsSync(configPath)) {
+      const config = JSON.parse(fs7.readFileSync(configPath, "utf-8"));
+      lastGeneratedAt = config.installedAt ?? null;
+    }
+  } catch {
+  }
+  if (!snapshot) {
+    return {
+      score: 0,
+      status: "unknown",
+      staleArtifacts: [],
+      changedSourceFiles: [],
+      recommendations: [
+        "No context snapshot found. Run `npx -y github:marinvch/ai-os --refresh-existing` to generate a baseline snapshot."
+      ],
+      snapshotCapturedAt: null,
+      lastGeneratedAt
+    };
+  }
+  const staleArtifacts = [];
+  let artifactTotal = 0;
+  let artifactFresh = 0;
+  for (const [rel, storedHash] of Object.entries(snapshot.artifactHashes)) {
+    artifactTotal++;
+    const currentHash = hashFile(path7.join(rootDir, rel));
+    if (currentHash === storedHash) {
+      artifactFresh++;
+    } else {
+      staleArtifacts.push(rel);
+    }
+  }
+  const changedSourceFiles = [];
+  let sourceTotal = 0;
+  let sourceFresh = 0;
+  for (const [rel, storedHash] of Object.entries(snapshot.sourceHashes)) {
+    sourceTotal++;
+    const abs = rel === "src/" ? path7.join(rootDir, "src") : path7.join(rootDir, rel);
+    let currentHash;
+    if (rel === "src/" && fs7.existsSync(abs)) {
+      currentHash = hashDirectory(abs).hash;
+    } else {
+      currentHash = hashFile(abs);
+    }
+    if (currentHash === storedHash) {
+      sourceFresh++;
+    } else {
+      changedSourceFiles.push(rel);
+    }
+  }
+  const totalTracked = artifactTotal + sourceTotal;
+  const totalFresh = artifactFresh + sourceFresh;
+  const score = totalTracked > 0 ? totalFresh / totalTracked : 1;
+  let status;
+  if (score >= 0.9) {
+    status = "fresh";
+  } else if (score >= 0.6) {
+    status = "drifted";
+  } else {
+    status = "stale";
+  }
+  const recommendations = [];
+  const refreshCmd = "npx -y github:marinvch/ai-os --refresh-existing";
+  if (staleArtifacts.length > 0 && changedSourceFiles.length > 0) {
+    recommendations.push(
+      `Source changes detected in: ${changedSourceFiles.join(", ")}. Re-run \`${refreshCmd}\` to rebuild context artifacts.`
+    );
+  } else if (staleArtifacts.length > 0) {
+    recommendations.push(
+      `Context artifacts have drifted from the last generation snapshot. Run \`${refreshCmd}\` to synchronize them.`
+    );
+  } else if (changedSourceFiles.length > 0) {
+    recommendations.push(
+      `Source files changed (${changedSourceFiles.join(", ")}) but context artifacts are intact. Verify that conventions and architecture docs still reflect the updated code, then run \`${refreshCmd} --regenerate-context\` if needed.`
+    );
+  }
+  if (staleArtifacts.some((a) => a.includes("conventions"))) {
+    recommendations.push("`conventions.md` is stale \u2014 run `get_conventions` and verify coding rules are still accurate.");
+  }
+  if (staleArtifacts.some((a) => a.includes("architecture"))) {
+    recommendations.push("`architecture.md` is stale \u2014 review system design docs and re-run generation.");
+  }
+  if (staleArtifacts.some((a) => a.includes("copilot-instructions"))) {
+    recommendations.push("`copilot-instructions.md` has changed \u2014 check persistent rules in `config.json` are still aligned.");
+  }
+  if (status === "fresh" && recommendations.length === 0) {
+    recommendations.push("Context is fresh. No action needed.");
+  }
+  return {
+    score,
+    status,
+    staleArtifacts,
+    changedSourceFiles,
+    recommendations,
+    snapshotCapturedAt: snapshot.capturedAt,
+    lastGeneratedAt
+  };
+}
+function formatFreshnessReport(report) {
+  const scorePercent = Math.round(report.score * 100);
+  const statusEmoji = {
+    fresh: "\u2705",
+    drifted: "\u26A0\uFE0F",
+    stale: "\u274C",
+    unknown: "\u2753"
+  }[report.status];
+  const lines = [
+    `## Context Freshness Report`,
+    ``,
+    `${statusEmoji} **Status:** ${report.status.toUpperCase()}  |  **Score:** ${scorePercent}/100`,
+    ``
+  ];
+  if (report.snapshotCapturedAt) {
+    lines.push(`- **Snapshot captured:** ${report.snapshotCapturedAt}`);
+  }
+  if (report.lastGeneratedAt) {
+    lines.push(`- **Last AI OS run:** ${report.lastGeneratedAt}`);
+  }
+  lines.push("");
+  if (report.staleArtifacts.length > 0) {
+    lines.push("### Stale Context Artifacts");
+    for (const a of report.staleArtifacts) {
+      lines.push(`- \`${a}\``);
+    }
+    lines.push("");
+  }
+  if (report.changedSourceFiles.length > 0) {
+    lines.push("### Changed Source / Config Files");
+    for (const f of report.changedSourceFiles) {
+      lines.push(`- \`${f}\``);
+    }
+    lines.push("");
+  }
+  if (report.recommendations.length > 0) {
+    lines.push("### Recommendations");
+    for (const r of report.recommendations) {
+      lines.push(`- ${r}`);
+    }
+    lines.push("");
+  }
+  return lines.join("\n");
+}
+
+// src/mcp-server/freshness-bridge.ts
+function getContextFreshness() {
+  const report = computeFreshnessReport(ROOT);
+  return formatFreshnessReport(report);
+}
+
+// src/mcp-server/recommendations-bridge.ts
+import fs8 from "node:fs";
+import path8 from "node:path";
+function getRecommendations() {
+  const recommendationsPath = path8.join(ROOT, ".github", "ai-os", "recommendations.md");
+  if (fs8.existsSync(recommendationsPath)) {
+    return fs8.readFileSync(recommendationsPath, "utf-8");
+  }
+  return "No recommendations file found. Run AI OS generation with recommendations enabled to create .github/ai-os/recommendations.md.";
+}
+function suggestImprovements() {
+  const suggestions = [];
+  const envExamplePaths = [".env.example", ".env.local.example", ".env.sample"];
+  const hasEnvExample = envExamplePaths.some((p) => fs8.existsSync(path8.join(ROOT, p)));
+  if (!hasEnvExample) {
+    suggestions.push("**Missing `.env.example`**: Document required environment variables so `get_env_vars` can surface them.");
+  }
+  if (!fs8.existsSync(path8.join(ROOT, ".github", "COPILOT_CONTEXT.md"))) {
+    suggestions.push("**Missing `COPILOT_CONTEXT.md`**: Re-run the AI OS installer (`npx -y github:marinvch/ai-os --refresh-existing`) to generate the session context card for better session continuity.");
+  }
+  if (!fs8.existsSync(path8.join(ROOT, ".github", "ai-os", "recommendations.md"))) {
+    suggestions.push("**Missing `recommendations.md`**: Re-run the AI OS installer (`npx -y github:marinvch/ai-os --refresh-existing`) to generate stack-specific tool recommendations.");
+  }
+  const memoryPath = path8.join(ROOT, ".github", "ai-os", "memory", "memory.jsonl");
+  if (!fs8.existsSync(memoryPath)) {
+    suggestions.push("**No repository memory found**: Use `remember_repo_fact` to capture key architectural decisions.");
+  } else {
+    const content = fs8.readFileSync(memoryPath, "utf-8").trim();
+    if (!content) {
+      suggestions.push("**Empty repository memory**: Use `remember_repo_fact` to capture key architectural decisions and conventions.");
+    }
+  }
+  const archPath = path8.join(ROOT, ".github", "ai-os", "context", "architecture.md");
+  if (!fs8.existsSync(archPath)) {
+    suggestions.push("**Missing architecture doc**: Re-run the AI OS installer (`npx -y github:marinvch/ai-os --refresh-existing`) to rebuild `.github/ai-os/context/architecture.md`.");
+  }
+  const configPath = path8.join(ROOT, ".github", "ai-os", "config.json");
+  if (fs8.existsSync(configPath)) {
+    try {
+      const config = JSON.parse(fs8.readFileSync(configPath, "utf-8"));
+      if (!config.persistentRules || config.persistentRules.length === 0) {
+        suggestions.push('**No persistent rules defined**: Add `persistentRules` in `.github/ai-os/config.json` for rules that survive context window resets (e.g. "use shared components from components/ui").');
+      }
+      if (config.recommendations === false) {
+        suggestions.push('**Recommendations disabled**: Set `"recommendations": true` in `.github/ai-os/config.json` to enable stack-specific tool suggestions.');
+      }
+    } catch {
+    }
+  }
+  if (suggestions.length === 0) {
+    return "## Improvement Suggestions\n\nNo actionable improvements found. Your AI OS setup looks healthy!\n\nConsider:\n- Adding more persistent rules in `config.json` for frequently forgotten conventions\n- Calling `remember_repo_fact` after major architectural decisions";
+  }
+  return [
+    "## Improvement Suggestions",
+    "",
+    ...suggestions.map((s) => `- ${s}`)
+  ].join("\n");
+}
+
+// src/mcp-server/utils.ts
+var __dirname2 = path9.dirname(fileURLToPath2(import.meta.url));
+function getProjectRoot() {
+  return path9.resolve(ROOT);
+}
+function getSessionContext() {
+  const SESSION_BOOTSTRAP = [
+    "",
+    "---",
+    "",
+    "## Session Start Bootstrap",
+    "",
+    "**At the start of every session, run in order:**",
+    "",
+    "1. `get_session_context` \u2190 you are here",
+    "2. `get_repo_memory` \u2014 reload durable architectural decisions",
+    "3. `get_conventions` \u2014 reload coding rules before writing any code",
+    "",
+    "**Before any non-trivial change:**",
+    "",
+    "- `get_project_structure` \u2014 explore unfamiliar directories",
+    "- `get_file_summary` \u2014 understand a file without reading it fully",
+    "- `get_impact_of_change` \u2014 assess blast radius before editing shared files",
+    "- Use `/define` \u2192 `/plan` lifecycle prompts before writing code",
+    "",
+    "> If the request is ambiguous or underspecified, ask clarifying questions first.",
+    "> Do not improvise requirements or make architectural changes without confirmation."
+  ].join("\n");
+  const contextCardPath = path9.join(ROOT, ".github", "COPILOT_CONTEXT.md");
+  if (fs9.existsSync(contextCardPath)) {
+    return fs9.readFileSync(contextCardPath, "utf-8") + SESSION_BOOTSTRAP;
+  }
+  const lines = [
+    "# Session Context",
+    "",
+    "> COPILOT_CONTEXT.md not found. Run AI OS generation to create it.",
+    "",
+    "## Quick Context",
+    ""
+  ];
+  const conventions = readAiOsFile("context/conventions.md");
+  if (conventions) {
+    const firstSection = conventions.split("\n##")[0];
+    lines.push(firstSection.split("\n").slice(0, 15).join("\n"));
+  }
+  lines.push("");
+  lines.push("Call `get_conventions` and `get_repo_memory` for full context.");
+  return lines.join("\n") + SESSION_BOOTSTRAP;
+}
+function checkForUpdates() {
+  const newConfigPath = path9.join(ROOT, ".github", "ai-os", "config.json");
+  const legacyConfigPath = path9.join(ROOT, ".ai-os", "config.json");
+  const configPath = fs9.existsSync(newConfigPath) ? newConfigPath : legacyConfigPath;
+  if (!fs9.existsSync(configPath)) {
+    return "AI OS is not installed in this repository. Run the bootstrap installer: `curl -fsSL https://raw.githubusercontent.com/marinvch/ai-os/master/bootstrap.sh | bash`";
+  }
+  let installedVersion = "0.0.0";
+  let installedAt = "unknown";
+  try {
+    const config = JSON.parse(fs9.readFileSync(configPath, "utf-8"));
+    installedVersion = config.version ?? "0.0.0";
+    installedAt = config.installedAt ?? "unknown";
+  } catch {
+    return "Could not read .github/ai-os/config.json";
+  }
+  let toolVersion = "0.0.0";
+  try {
+    const toolPkg = JSON.parse(
+      fs9.readFileSync(path9.join(__dirname2, "..", "..", "package.json"), "utf-8")
+    );
+    toolVersion = toolPkg.version ?? "0.0.0";
+  } catch {
+  }
+  const latestVersion = getLatestResolvableVersion(toolVersion);
+  const parse = (v) => v.replace(/^v/, "").split(".").map(Number);
+  const [cMaj = 0, cMin = 0, cPat = 0] = parse(latestVersion);
+  const [iMaj = 0, iMin = 0, iPat = 0] = parse(installedVersion);
+  const updateAvailable = cMaj > iMaj || cMaj === iMaj && cMin > iMin || cMaj === iMaj && cMin === iMin && cPat > iPat;
+  if (updateAvailable) {
+    return [
+      `## AI OS Update Available`,
+      ``,
+      `- **Installed:** v${installedVersion} (generated ${installedAt})`,
+      `- **Latest:**    v${latestVersion}`,
+      ``,
+      `Run the following to update all AI OS artifacts in-place:`,
+      `\`\`\`bash`,
+      `npx -y "github:marinvch/ai-os#v${latestVersion}" --refresh-existing`,
+      `\`\`\``,
+      `Or use the bootstrap one-liner: \`curl -fsSL https://raw.githubusercontent.com/marinvch/ai-os/master/bootstrap.sh | bash\``,
+      `This refreshes context docs, agents, skills, MCP tools, and the dependency graph without deleting your existing files.`
+    ].join("\n");
+  }
+  return `AI OS is up-to-date (v${installedVersion}). Last generated: ${installedAt}`;
+}
+
+// src/mcp-server/index.ts
+function logDiagnostic(message) {
+  if (process.env["AI_OS_MCP_DEBUG"] === "1") {
+    console.error(`[ai-os:mcp] ${message}`);
+  }
+}
+function validateRuntimeEnvironment() {
+  const messages = [];
+  const root = getProjectRoot();
+  if (!root) {
+    messages.push("AI_OS_ROOT resolved to an empty path.");
+  }
+  const tools = getActiveToolsForProject(root);
+  if (tools.length === 0) {
+    messages.push("No MCP tools were registered at runtime.");
+  }
+  if (process.env["AI_OS_MCP_DEBUG"] === "1") {
+    messages.push(`Resolved AI_OS_ROOT: ${root}`);
+    messages.push(`Registered tools: ${tools.length}`);
+  }
+  return { ok: messages.filter((msg) => !msg.startsWith("Resolved ") && !msg.startsWith("Registered ")).length === 0, messages };
+}
+function executeTool(toolName, input) {
+  const watchdogMessage = recordToolCallAndRunWatchdog(toolName);
+  let result;
+  switch (toolName) {
+    case "search_codebase":
+      result = searchFiles(input.query ?? "", input.filePattern, input.caseSensitive ?? false);
+      break;
+    case "get_project_structure": {
+      const startDir = input.path ? path10.join(getProjectRoot(), input.path) : getProjectRoot();
+      result = buildFileTree(startDir, 0, input.depth ?? 4).join("\n");
+      break;
+    }
+    case "get_conventions":
+      result = readAiOsFile("context/conventions.md") || "No conventions file found.";
+      break;
+    case "get_stack_info":
+      result = readAiOsFile("context/stack.md") || "No stack file found.";
+      break;
+    case "get_file_summary":
+      result = getFileSummary(input.filePath ?? "");
+      break;
+    case "get_prisma_schema":
+      result = getPrismaSchema();
+      break;
+    case "get_trpc_procedures":
+      result = getTrpcProcedures();
+      break;
+    case "get_api_routes":
+      result = getApiRoutes(input.filter);
+      break;
+    case "get_env_vars":
+      result = getEnvVars();
+      break;
+    case "get_package_info":
+      result = getPackageInfo(input.packageName);
+      break;
+    case "get_impact_of_change":
+      result = getImpactOfChange(input.filePath ?? "");
+      break;
+    case "get_dependency_chain":
+      result = getDependencyChain(input.filePath ?? "");
+      break;
+    case "check_for_updates":
+      result = checkForUpdates();
+      break;
+    case "get_memory_guidelines":
+      result = getMemoryGuidelines();
+      break;
+    case "get_repo_memory":
+      result = getRepoMemory(input.query, input.category, input.limit);
+      break;
+    case "remember_repo_fact":
+      result = rememberRepoFact(input.title ?? "", input.content ?? "", input.category, input.tags);
+      break;
+    case "get_active_plan":
+      result = getActivePlan();
+      break;
+    case "upsert_active_plan":
+      result = upsertActivePlan(
+        input.objective ?? "",
+        input.acceptanceCriteria ?? "",
+        input.status,
+        input.currentStep,
+        input.nextStep,
+        input.blockers
+      );
+      break;
+    case "append_checkpoint":
+      result = appendCheckpoint(input.title ?? "", input.status, input.notes, input.toolCallCount);
+      break;
+    case "close_checkpoint":
+      result = closeCheckpoint(input.checkpointId ?? "", input.notes);
+      break;
+    case "record_failure_pattern":
+      result = recordFailurePattern(
+        input.tool ?? "",
+        input.errorSignature ?? "",
+        input.rootCause ?? "",
+        input.attemptedFix ?? "",
+        input.outcome,
+        input.confidence
+      );
+      break;
+    case "compact_session_context":
+      result = compactSessionContext();
+      break;
+    case "set_watchdog_threshold":
+      result = setWatchdogThreshold(typeof input.threshold === "number" ? input.threshold : 8);
+      break;
+    case "reset_session_state":
+      result = resetSessionState();
+      break;
+    case "sync_hosted_memory":
+      result = syncHostedMemory();
+      break;
+    case "prune_memory":
+      result = pruneMemory();
+      break;
+    case "get_session_context":
+      result = getSessionContext();
+      break;
+    case "get_recommendations":
+      result = getRecommendations();
+      break;
+    case "suggest_improvements":
+      result = suggestImprovements();
+      break;
+    case "get_context_freshness":
+      result = getContextFreshness();
+      break;
+    default:
+      result = `Unknown tool: ${toolName}`;
+      break;
+  }
+  if (!watchdogMessage) {
+    return result;
+  }
+  return `${result}
+
+[Watchdog] ${watchdogMessage}`;
+}
+async function main() {
+  if (process.argv.includes("--healthcheck")) {
+    const health2 = validateRuntimeEnvironment();
+    if (!health2.ok) {
+      for (const message of health2.messages) {
+        console.error(`[ai-os:mcp:healthcheck] ${message}`);
+      }
+      process.exit(1);
+    }
+    console.error("[ai-os:mcp:healthcheck] OK");
+    process.exit(0);
+  }
+  if (!process.argv.includes("--copilot")) {
+    logDiagnostic("Starting in standalone JSON-RPC stdio mode");
+    runStandaloneMcp();
+    return;
+  }
+  const health = validateRuntimeEnvironment();
+  for (const message of health.messages) {
+    logDiagnostic(message);
+  }
+  if (!health.ok) {
+    throw new Error(`MCP runtime validation failed: ${health.messages.join(" | ")}`);
+  }
+  let CopilotClient;
+  try {
+    const sdk = await import("@github/copilot-sdk");
+    CopilotClient = sdk.CopilotClient;
+  } catch {
+    console.error("[ai-os:mcp] @github/copilot-sdk is required for --copilot mode but was not found.");
+    console.error("[ai-os:mcp] Install it or omit --copilot to use standalone JSON-RPC mode.");
+    process.exit(1);
+  }
+  const client = new CopilotClient();
+  try {
+    await client.start();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[ai-os:mcp] Copilot SDK client failed to start: ${msg}`);
+    console.error("[ai-os:mcp] Ensure the Copilot CLI is installed and authenticated, or omit --copilot to use standalone mode.");
+    process.exit(1);
+  }
+  const session = await client.createSession({
+    model: "gpt-4.1",
+    tools: getActiveToolsForProject(getProjectRoot()).map((tool) => ({
+      name: tool.name,
+      description: tool.description,
+      parameters: tool.inputSchema,
+      handler: async (input) => executeTool(tool.name, input)
+    })),
+    onPermissionRequest: (_req) => ({ kind: "approved" })
+  });
+  process.on("SIGINT", async () => {
+    await session.disconnect();
+    await client.stop();
+    process.exit(0);
+  });
+  process.on("SIGTERM", async () => {
+    await session.disconnect();
+    await client.stop();
+    process.exit(0);
+  });
+}
+function runStandaloneMcp() {
+  process.on("SIGTERM", () => process.exit(0));
+  process.on("SIGINT", () => process.exit(0));
+  let buffer = "";
+  process.stdin.setEncoding("utf-8");
+  process.stdin.on("data", (chunk) => {
+    buffer += chunk;
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      handleJsonRpcMessage(trimmed);
+    }
+  });
+}
+function handleJsonRpcMessage(raw) {
+  let msg;
+  try {
+    msg = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const { id, method, params } = msg;
+  if (method === "tools/list") {
+    sendResponse(id, {
+      tools: getActiveToolsForProject(getProjectRoot()).map((tool) => ({
+        name: tool.name,
+        description: tool.description,
+        inputSchema: tool.inputSchema
+      }))
+    });
+    return;
+  }
+  if (method === "tools/call") {
+    const toolName = params?.name ?? "";
+    const input = params?.arguments ?? {};
+    const toolExists = getActiveToolsForProject(getProjectRoot()).some((tool) => tool.name === toolName);
+    if (!toolExists) {
+      sendError(id, -32601, `Unknown tool: ${toolName}`);
+      return;
+    }
+    try {
+      const result = executeTool(toolName, input);
+      sendResponse(id, { content: [{ type: "text", text: result }] });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      sendResponse(id, { content: [{ type: "text", text: message }], isError: true });
+    }
+    return;
+  }
+  if (method === "initialize") {
+    sendResponse(id, {
+      protocolVersion: "2025-11-25",
+      capabilities: { tools: {}, prompts: {} },
+      serverInfo: {
+        name: "ai-os",
+        version: "0.11.0",
+        description: "AI OS \u2014 project-specific context, memory, and session continuity tools for GitHub Copilot"
+      }
+    });
+    return;
+  }
+  if (method === "notifications/initialized") {
+    return;
+  }
+  if (method === "prompts/list") {
+    sendResponse(id, {
+      prompts: [
+        {
+          name: "session_start",
+          description: "Bootstrap a new AI OS session \u2014 loads MUST-ALWAYS rules, repo memory, and conventions in the correct order."
+        },
+        {
+          name: "pre_commit_check",
+          description: "Pre-commit code quality gate \u2014 validates conventions, flags security issues, and assesses blast radius for changed files.",
+          arguments: [
+            { name: "files", description: "Comma-separated list of changed file paths (relative to repo root). Leave blank to check the current file.", required: false }
+          ]
+        },
+        {
+          name: "architecture_review",
+          description: "Load full architecture context for an informed architectural review or cross-cutting change."
+        }
+      ]
+    });
+    return;
+  }
+  if (method === "prompts/get") {
+    const promptName = params?.name ?? "";
+    const args = params?.arguments ?? {};
+    if (promptName === "session_start") {
+      sendResponse(id, {
+        description: "AI OS session bootstrap \u2014 reloads MUST-ALWAYS rules and key context.",
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: [
+                "Start a new AI OS session by running these tools in order:",
+                "1. Call `get_session_context` \u2014 reloads MUST-ALWAYS rules, build commands, and key file locations.",
+                "2. Call `get_repo_memory` \u2014 reloads durable architectural decisions and constraints.",
+                "3. Call `get_conventions` \u2014 reloads coding rules and naming conventions.",
+                "",
+                "After loading context, summarise what you found in 3\u20135 bullet points before responding to the user."
+              ].join("\n")
+            }
+          }
+        ]
+      });
+      return;
+    }
+    if (promptName === "pre_commit_check") {
+      const filesNote = args["files"] ? `Focus on these changed files: ${args["files"]}.` : "Ask the user which files have changed if not already clear from context.";
+      sendResponse(id, {
+        description: "Pre-commit gate \u2014 conventions, security, blast radius.",
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: [
+                "Run a pre-commit code quality check:",
+                "1. Call `get_conventions` \u2014 load coding rules and naming conventions.",
+                `2. ${filesNote}`,
+                "3. For each changed file, call `get_impact_of_change` with the file path.",
+                "4. Flag any violations of conventions or security issues (OWASP Top 10).",
+                "5. Report: (a) convention violations, (b) security findings, (c) blast-radius files that may need review.",
+                "",
+                "Do NOT modify any files \u2014 this is a read-only review."
+              ].join("\n")
+            }
+          }
+        ]
+      });
+      return;
+    }
+    if (promptName === "architecture_review") {
+      sendResponse(id, {
+        description: "Architecture review \u2014 loads full context for cross-cutting decisions.",
+        messages: [
+          {
+            role: "user",
+            content: {
+              type: "text",
+              text: [
+                "Load full architecture context for an architectural review:",
+                "1. Call `get_session_context` \u2014 MUST-ALWAYS rules.",
+                "2. Call `get_stack_info` \u2014 complete dependency inventory.",
+                "3. Call `get_project_structure` \u2014 directory layout.",
+                "4. Call `get_repo_memory` \u2014 durable architectural decisions.",
+                "",
+                "Then summarise: current architecture patterns, key dependencies, and any known constraints before making any recommendations.",
+                "Do NOT modify any files during this review."
+              ].join("\n")
+            }
+          }
+        ]
+      });
+      return;
+    }
+    sendError(id, -32602, `Unknown prompt: ${promptName}`);
+    return;
+  }
+}
+function sendResponse(id, result) {
+  const msg = JSON.stringify({ jsonrpc: "2.0", id: id ?? null, result });
+  process.stdout.write(msg + "\n");
+}
+function sendError(id, code, message) {
+  const msg = JSON.stringify({ jsonrpc: "2.0", id: id ?? null, error: { code, message } });
+  process.stdout.write(msg + "\n");
+}
+main().catch((err) => {
+  const msg = err instanceof Error ? err.message : String(err);
+  console.error(`[ai-os:mcp] Fatal error: ${msg}`);
+  process.exit(1);
+});

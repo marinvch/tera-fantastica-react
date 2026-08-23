@@ -1,0 +1,35 @@
+{
+  "version": "0.15.0",
+  "installedAt": "2026-05-10T05:13:35.015Z",
+  "projectName": "tera-fantastica-react",
+  "primaryLanguage": "TypeScript",
+  "primaryFramework": "React (Vite)",
+  "frameworks": [
+    "React (Vite)"
+  ],
+  "packageManager": "npm",
+  "hasTypeScript": true,
+  "agentsMd": false,
+  "pathSpecificInstructions": true,
+  "recommendations": true,
+  "sessionContextCard": true,
+  "updateCheckEnabled": true,
+  "skillsStrategy": "creator-only",
+  "agentFlowMode": "create",
+  "persistentRules": [
+    "Always check src/components for an existing reusable component before creating a new one.",
+    "Always define shared interfaces and types in src/types instead of redeclaring them inline.",
+    "Never use any in TypeScript code; prefer explicit types or unknown.",
+    "Treat src/App.tsx as the active router shell and treat src/Router.jsx as legacy unless a task explicitly targets it.",
+    "Preserve the repo's current styling model: MUI sx plus local CSS/SCSS, not Tailwind assumptions.",
+    "Preserve the current Vite asset path pattern and avoid introducing process.env.PUBLIC_URL."
+  ],
+  "exclude": [
+    "node_modules",
+    "dist",
+    ".next",
+    ".nuxt",
+    "build",
+    "out"
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "ai-os": {
+      "type": "stdio",
+      "command": "C:\\Program Files\\nodejs\\node.exe",
+      "args": [
+        "D:\\Projects\\Personal\\tera-fantastica-react\\.ai-os\\mcp-server\\index.js"
+      ],
+      "env": {
+        "AI_OS_ROOT": "D:\\Projects\\Personal\\tera-fantastica-react"
+      }
+    }
+  }
+}
