@@ -7,30 +7,33 @@ Three components — `Viewer` (deep-zoom newspaper), `Carousel` (books/magazines
 `GlobalSearch` (app-bar search). Pages hand them fully-formed data from `src/archive/`; the
 components own all interaction state and never read JSON themselves.
 
-## Viewer.tsx — OpenSeadragon
+## Viewer.tsx + useDeepZoomPane.ts + paneOptions.ts
 
 An "issue" in `ViewerProps` is really **one page** of the newspaper (the buttons say
 "Предишна/Следваща страница"). Spread mode pairs index `n` with `n+1` and steps by 2.
 
-- **Every viewer instance must be destroyed in its effect cleanup.** Both `useEffect`s call
-  `viewer.destroy()`, remove their `open` / `open-failed` handlers, and null the ref. The effects
-  re-run on `[activeIssue, isSpreadMode, secondaryIssue]`, so a missing `destroy()` leaks a canvas
-  and a tile-fetch loop on every page turn.
+- **`useDeepZoomPane` owns the OpenSeadragon lifecycle — all of it.** Create, handler wiring,
+  `goHome`, failure, and `destroy()` in the effect cleanup. The effect re-runs on every page turn,
+  so a missed `destroy()` leaks a canvas and a live tile-fetch loop each time. This used to be a
+  discipline repeated across two near-identical effects in the component; keep it in one place.
+- **An inactive pane is switched off by passing `undefined` as its tile source**, not by a boolean.
+  That is what "not in spread mode" means: the second pane reports `idle` and mounts nothing.
+- **Each pane reports its own status**; the component derives `isLoading`/`hasError` from both.
+  There is no shared flag that two effects race to clear — that coupling was the old bug.
 - **The tile source is `issue.tileSourceUrl ?? issue.imageUrl`** — a DZI `dzc_output.xml` when
-  present, otherwise the flat PNG. Both paths come from `normalizePublicAssetPath`, so they must
-  exist under `public/`.
-- **Mouse wheel is deliberately not zoom.** `gestureSettingsMouse.scrollToZoom` is `false` and
-  `onWheel` is repurposed to turn pages, guarded by a 360 ms lock in `wheelPageNavigationLockRef`.
-  Re-enabling scroll-to-zoom would make the page-turn gesture unusable.
+  present, otherwise the flat PNG. Both must exist under `public/`.
+- **`paneOptions.ts` uses `import type` for OpenSeadragon on purpose.** OSD touches `document` at
+  module load, so a real import would make the options untestable outside a browser. That file is
+  the only part of the viewer with tests; do not merge it back into the hook.
+- **Mouse wheel is deliberately not zoom.** `gestureSettingsMouse.scrollToZoom` is `false` and the
+  component's `onWheel` turns pages instead, guarded by a 360 ms lock. Re-enabling scroll-to-zoom
+  makes the page-turn gesture unusable.
 - **Fullscreen is app-managed on purpose.** `handleToggleFullscreen` never calls
-  `requestFullscreen()`; it only toggles `isPseudoFullscreen`, which adds the
-  `viewer-container-force-fullscreen` class so the custom controls stay visible. The native
-  `fullscreenchange` listener and `isFullscreen` state remain only to react if the browser enters
-  fullscreen some other way — `isFullscreen` is otherwise always `false`. This looks like a bug
-  and is not.
-- `isLoading` is cleared by whichever viewer finishes last: the primary clears it only when not in
-  spread mode, otherwise the secondary does. Changing one branch means changing both.
-- All viewport buttons go through `runViewportAction`, which applies to both panes at once.
+  `requestFullscreen()`; it toggles `isPseudoFullscreen`, which adds a CSS class so the custom
+  controls stay visible. The native `fullscreenchange` listener remains only to react if the
+  browser enters fullscreen another way. This looks like a bug and is not.
+- All viewport buttons apply to **both** panes at once.
+
 
 ## Carousel.tsx — Swiper
 

@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
-import OpenSeadragon from "openseadragon";
+import { useDeepZoomPane } from "./useDeepZoomPane";
 import FullscreenIcon from "@mui/icons-material/Fullscreen";
 import FullscreenExitIcon from "@mui/icons-material/FullscreenExit";
 import "../styles/viewer.css";
@@ -14,17 +14,11 @@ const Viewer: React.FC<ViewerProps> = ({ issues, initialIssueId }) => {
   const defaultIssueId = initialIssueId ?? issues[0]?.id ?? "";
   const [activeIssueId, setActiveIssueId] = useState(defaultIssueId);
   const [isSpreadMode, setIsSpreadMode] = useState(false);
-  const [isLoading, setIsLoading] = useState(true);
-  const [hasError, setHasError] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [isPseudoFullscreen, setIsPseudoFullscreen] = useState(false);
 
   const viewerContainerRef = useRef<HTMLDivElement | null>(null);
   const wheelPageNavigationLockRef = useRef(0);
-  const primaryHostRef = useRef<HTMLDivElement | null>(null);
-  const secondaryHostRef = useRef<HTMLDivElement | null>(null);
-  const primaryViewerRef = useRef<OpenSeadragon.Viewer | null>(null);
-  const secondaryViewerRef = useRef<OpenSeadragon.Viewer | null>(null);
 
   useEffect(() => {
     const fullscreenDocument = document as FullscreenDocument;
@@ -84,117 +78,19 @@ const Viewer: React.FC<ViewerProps> = ({ issues, initialIssueId }) => {
     return issues[activeIndex + 1];
   }, [activeIndex, isSpreadMode, issues]);
 
-  useEffect(() => {
-    setIsLoading(true);
-    setHasError(false);
-  }, [activeIssue?.id, isSpreadMode, secondaryIssue?.id]);
+  // Each pane owns its own OpenSeadragon lifecycle and reports its own state. The second pane is
+  // switched off by passing no tile source, which is what "not in spread mode" means here.
+  const primary = useDeepZoomPane(
+    activeIssue ? activeIssue.tileSourceUrl ?? activeIssue.imageUrl : undefined,
+    { showNavigator: true },
+  );
+  const secondary = useDeepZoomPane(
+    secondaryIssue ? secondaryIssue.tileSourceUrl ?? secondaryIssue.imageUrl : undefined,
+  );
 
-  useEffect(() => {
-    const primaryHost = primaryHostRef.current;
-    if (!primaryHost || !activeIssue) {
-      return;
-    }
-
-    const primaryTileSource = activeIssue.tileSourceUrl ?? activeIssue.imageUrl;
-
-    const primaryViewer = OpenSeadragon({
-      element: primaryHost,
-      tileSources: primaryTileSource,
-      showNavigationControl: false,
-      showNavigator: true,
-      navigatorPosition: "BOTTOM_LEFT",
-      navigatorAutoFade: false,
-      animationTime: 0.9,
-      minZoomImageRatio: 0.7,
-      maxZoomPixelRatio: 4,
-      visibilityRatio: 0.8,
-      gestureSettingsMouse: {
-        scrollToZoom: false,
-      },
-      gestureSettingsTouch: {
-        flickEnabled: true,
-        pinchToZoom: true,
-      },
-    });
-
-    const handlePrimaryOpen = () => {
-      primaryViewer.viewport.goHome(true);
-      if (!isSpreadMode || !secondaryIssue) {
-        setIsLoading(false);
-      }
-    };
-
-    const handlePrimaryOpenFailed = () => {
-      setIsLoading(false);
-      setHasError(true);
-    };
-
-    primaryViewer.addHandler("open", handlePrimaryOpen);
-    primaryViewer.addHandler("open-failed", handlePrimaryOpenFailed);
-    primaryViewerRef.current = primaryViewer;
-
-    return () => {
-      primaryViewer.removeHandler("open", handlePrimaryOpen);
-      primaryViewer.removeHandler("open-failed", handlePrimaryOpenFailed);
-      primaryViewer.destroy();
-      primaryViewerRef.current = null;
-    };
-  }, [activeIssue, isSpreadMode, secondaryIssue]);
-
-  useEffect(() => {
-    if (!isSpreadMode || !secondaryIssue) {
-      if (!hasError) {
-        setIsLoading(false);
-      }
-      return;
-    }
-
-    const secondaryHost = secondaryHostRef.current;
-    if (!secondaryHost) {
-      return;
-    }
-
-    const secondaryTileSource = secondaryIssue.tileSourceUrl ?? secondaryIssue.imageUrl;
-
-    const secondaryViewer = OpenSeadragon({
-      element: secondaryHost,
-      tileSources: secondaryTileSource,
-      showNavigationControl: false,
-      showNavigator: false,
-      animationTime: 0.9,
-      minZoomImageRatio: 0.7,
-      maxZoomPixelRatio: 4,
-      visibilityRatio: 0.8,
-      gestureSettingsMouse: {
-        scrollToZoom: false,
-      },
-      gestureSettingsTouch: {
-        flickEnabled: true,
-        pinchToZoom: true,
-      },
-    });
-
-    const handleSecondaryOpen = () => {
-      secondaryViewer.viewport.goHome(true);
-      setIsLoading(false);
-    };
-
-    const handleSecondaryOpenFailed = () => {
-      setIsLoading(false);
-      setHasError(true);
-    };
-
-    secondaryViewer.addHandler("open", handleSecondaryOpen);
-    secondaryViewer.addHandler("open-failed", handleSecondaryOpenFailed);
-    secondaryViewerRef.current = secondaryViewer;
-
-    return () => {
-      secondaryViewer.removeHandler("open", handleSecondaryOpen);
-      secondaryViewer.removeHandler("open-failed", handleSecondaryOpenFailed);
-      secondaryViewer.destroy();
-      secondaryViewerRef.current = null;
-    };
-  }, [hasError, isSpreadMode, secondaryIssue]);
+  const panes = [primary, secondary];
+  const hasError = panes.some((pane) => pane.status === "failed");
+  const isLoading = !hasError && panes.some((pane) => pane.status === "loading");
 
   if (!activeIssue) {
     return <div className="viewer-empty">Няма налични броеве на вестника.</div>;
@@ -231,35 +127,11 @@ const Viewer: React.FC<ViewerProps> = ({ issues, initialIssueId }) => {
     goToIssueIndex(activeIndex + step);
   };
 
-  const runViewportAction = (
-    action: (viewer: OpenSeadragon.Viewer) => void,
-  ) => {
-    const viewers = [primaryViewerRef.current, secondaryViewerRef.current].filter(
-      (viewer): viewer is OpenSeadragon.Viewer => Boolean(viewer),
-    );
+  const handleZoomIn = () => panes.forEach((pane) => pane.zoomBy(1.2));
 
-    viewers.forEach((viewer) => action(viewer));
-  };
+  const handleZoomOut = () => panes.forEach((pane) => pane.zoomBy(0.84));
 
-  const handleZoomIn = () => {
-    runViewportAction((viewer) => {
-      viewer.viewport.zoomBy(1.2);
-      viewer.viewport.applyConstraints();
-    });
-  };
-
-  const handleZoomOut = () => {
-    runViewportAction((viewer) => {
-      viewer.viewport.zoomBy(0.84);
-      viewer.viewport.applyConstraints();
-    });
-  };
-
-  const handleReset = () => {
-    runViewportAction((viewer) => {
-      viewer.viewport.goHome(true);
-    });
-  };
+  const handleReset = () => panes.forEach((pane) => pane.goHome());
 
   const handleToggleFullscreen = () => {
     // Keep controls visible by using app-managed fullscreen mode consistently.
@@ -327,12 +199,12 @@ const Viewer: React.FC<ViewerProps> = ({ issues, initialIssueId }) => {
 
         <div className={`newspaper-stage ${isSpreadMode ? "newspaper-stage-spread" : ""}`}>
           <div className="newspaper-pane">
-            <div ref={primaryHostRef} className="osd-host" />
+            <div ref={primary.hostRef} className="osd-host" />
           </div>
 
           {isSpreadMode && secondaryIssue ? (
             <div className="newspaper-pane newspaper-pane-secondary">
-              <div ref={secondaryHostRef} className="osd-host" />
+              <div ref={secondary.hostRef} className="osd-host" />
             </div>
           ) : null}
         </div>
