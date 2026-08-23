@@ -230,7 +230,9 @@ const App: React.FC = () => {
               <Route path="/" element={<Home />} />
               <Route path="/newspaper" element={<Newspaper />} />
               <Route path="/magazines" element={<Magazines />} />
+              <Route path="/magazines/:uid" element={<Magazines />} />
               <Route path="/books" element={<Books />} />
+              <Route path="/books/:uid" element={<Books />} />
             </Routes>
           </Container>
         </Box>

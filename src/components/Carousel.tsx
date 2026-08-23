@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Swiper, SwiperSlide } from "swiper/react";
 import type { Swiper as SwiperType } from "swiper";
 import { useMediaQuery, useTheme } from "@mui/material";
@@ -16,18 +16,53 @@ import { PictureAsPdf } from "@mui/icons-material";
 
 import { CarouselProps, ArchiveItem } from "../types";
 
-const Carousel: React.FC<CarouselProps> = ({ data, effectMode = "coverflow", onOpenLink }) => {
+const Carousel: React.FC<CarouselProps> = ({
+  data,
+  effectMode = "coverflow",
+  onOpenLink,
+  initialUid,
+  onActiveChange,
+}) => {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down("sm"));
-  const [activeIndex, setActiveIndex] = useState(0);
   const swiperData: ArchiveItem[] = data;
+  // An unknown uid is not an error: deep links outlive catalogues, so fall back to the first item.
+  const initialIndex = Math.max(
+    0,
+    swiperData.findIndex((item) => item.uid === initialUid),
+  );
+  const [activeIndex, setActiveIndex] = useState(initialIndex);
+  const swiperRef = useRef<SwiperType | null>(null);
 
   if (swiperData.length === 0) {
     return <p>No items available.</p>;
   }
 
+  // initialSlide only applies on mount, but the uid can change under a mounted carousel — picking
+  // a search result while already on /books is exactly that. Follow the prop when it moves.
+  useEffect(() => {
+    const swiper = swiperRef.current;
+    const target = swiperData.findIndex((item) => item.uid === initialUid);
+
+    if (!swiper || target < 0 || swiper.realIndex === target) {
+      return;
+    }
+
+    // slideToLoop, not slideTo: with loop enabled the raw indices count cloned slides.
+    if (swiper.params.loop) {
+      swiper.slideToLoop(target);
+    } else {
+      swiper.slideTo(target);
+    }
+  }, [initialUid, swiperData]);
+
   const handleSlideChange = (swiper: SwiperType) => {
+    // realIndex, not activeIndex: loop mode clones slides, so activeIndex counts the clones.
     setActiveIndex(swiper.realIndex);
+    const item = swiperData[swiper.realIndex];
+    if (item) {
+      onActiveChange?.(item);
+    }
   };
 
   const activeItem = swiperData[activeIndex];
@@ -44,7 +79,7 @@ const Carousel: React.FC<CarouselProps> = ({ data, effectMode = "coverflow", onO
         centeredSlides={true}
         slidesPerView={isMobile ? 1.15 : "auto"}
         spaceBetween={isMobile ? 18 : 24}
-        initialSlide={0}
+        initialSlide={initialIndex}
         speed={700}
         watchSlidesProgress={true}
         {...(!isFlipMode
@@ -76,6 +111,9 @@ const Carousel: React.FC<CarouselProps> = ({ data, effectMode = "coverflow", onO
         }}
         navigation={false}
         modules={[EffectCoverflow, EffectFlip, Pagination, Keyboard, A11y]}
+        onSwiper={(swiper) => {
+          swiperRef.current = swiper;
+        }}
         onSlideChange={handleSlideChange}
         className={`mySwiper ${isMobile ? "is-mobile" : "is-desktop"}`}
         loop={isLoopEnabled}

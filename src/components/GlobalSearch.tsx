@@ -38,8 +38,10 @@ const GlobalSearch: React.FC = () => {
   }, [debouncedQuery, searchMode]);
 
   const handleSelect = (result: ArchiveItem) => {
-    const path = result.kind === "book" ? "/books" : "/magazines";
-    navigate(path, { state: { searchQuery: result.name } });
+    // Addressed by uid, not by name in router state: ids collide across kinds, and the state
+    // this used to pass was read by nobody.
+    const collection = result.kind === "book" ? "books" : "magazines";
+    navigate(`/${collection}/${result.uid}`);
     setSearchQuery("");
     setIsOpen(false);
   };

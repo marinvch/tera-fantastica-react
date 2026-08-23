@@ -33,6 +33,10 @@ export interface CarouselProps {
   data: ArchiveItem[];
   effectMode?: "coverflow" | "flip";
   onOpenLink?: (item: ArchiveItem) => void;
+  /** uid of the item to open on mount. Unknown or absent falls back to the first item. */
+  initialUid?: string;
+  /** Fires when the visible item changes, so the route can follow the carousel. */
+  onActiveChange?: (item: ArchiveItem) => void;
 }
 
 /**

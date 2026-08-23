@@ -39,6 +39,13 @@ An "issue" in `ViewerProps` is really **one page** of the newspaper (the buttons
 
 - **`loop` is enabled only when there are more than 2 slides** (`isLoopEnabled`). Swiper's loop
   mode misbehaves below that, so do not force it on.
+- **`initialUid` is honoured twice, and both are needed.** `initialSlide` covers mount; an effect
+  covers the prop *changing* under a mounted carousel — which is what picking a search result while
+  already on `/books` does. With only the first, the URL updates and the carousel does not.
+- Inside that effect use **`slideToLoop`** when loop is on: raw indices count cloned slides.
+- `onActiveChange` fires on every slide change and the pages navigate with `replace: true`, so
+  swiping does not fill the back button. An unknown uid falls back to the first item rather than
+  erroring — deep links outlive catalogues.
 - Because loop clones slides, `onSlideChange` reads **`swiper.realIndex`**, not `activeIndex`.
   Using `activeIndex` desynchronizes the detail panel from the visible slide.
 - Desktop uses `slidesPerView: "auto"`, which means slide width comes from `../styles/swiper.css`,
@@ -53,10 +60,9 @@ An "issue" in `ViewerProps` is really **one page** of the newspaper (the buttons
 - The dropdown closes via a full-screen transparent backdrop `Box` at `zIndex: 1200`, under the
   results at `1300`. Anything new that must stay clickable while results are open needs a higher
   z-index than the backdrop.
-- **One dead end remains:** `handleSelect` navigates with `state: { searchQuery: result.name }`,
-  which neither `pages/Books.tsx` nor `pages/Magazines.tsx` reads — picking a result lands on the
-  right page but highlights nothing. Fixing it properly means routing by `uid`; that is the
-  selection-seam work, not a patch here.
+- **Selecting a result routes by `uid`** — `/books/book-3`, `/magazines/magazine-1` — never by
+  name in router state. Ids collide across kinds, and the state this used to pass was read by
+  nobody.
 - Rows are built from plain `Box`/`Typography`, **not `<ListItemText>`** — MUI v7 removed
   `primaryTypographyProps`/`secondaryTypographyProps` and the row rendered blank through the slot
   API. Do not "simplify" it back.
