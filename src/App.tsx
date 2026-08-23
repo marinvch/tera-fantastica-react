@@ -1,5 +1,5 @@
-import React from "react";
-import { BrowserRouter as Router, Route, Routes, Link } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { BrowserRouter as Router, NavLink, Route, Routes } from "react-router-dom";
 import "./App.css";
 
 import { 
@@ -16,28 +16,50 @@ import {
   Toolbar,
   Typography,
   CssBaseline,
-  Divider
+  Divider,
+  Container,
+  useTheme
 } from "@mui/material";
 import HomeIcon from "@mui/icons-material/Home";
 import ImportContactsIcon from "@mui/icons-material/ImportContacts";
 import LocalLibraryIcon from "@mui/icons-material/LocalLibrary";
 import MenuBookIcon from "@mui/icons-material/MenuBook";
 import MenuIcon from "@mui/icons-material/Menu";
+import CloseIcon from "@mui/icons-material/Close";
 
-import Home from "./components/Layout/Home";
+import Home from "./pages/Home";
 import Newspaper from "./pages/Newspaper";
 import Magazines from "./pages/Magazines";
 import Books from "./pages/Books";
+import GlobalSearch from "./components/GlobalSearch";
 
 const App: React.FC = () => {
-  const isMobile = useMediaQuery('(max-width:768px)');
-  const [drawerOpen, setDrawerOpen] = React.useState(!isMobile);
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down("md"));
+  const [drawerOpen, setDrawerOpen] = useState(!isMobile);
+
+  useEffect(() => {
+    setDrawerOpen(!isMobile);
+  }, [isMobile]);
   
   const handleDrawerToggle = () => {
     setDrawerOpen(!drawerOpen);
   };
 
-  const drawerWidth = isMobile ? "100%" : "240px";
+  // Width of the permanent drawer, in px. Kept as a bare number so each rule can carry its own
+  // unit: interpolating it directly produced `calc(100% - 220)`, invalid CSS that the browser
+  // drops — which let the AppBar run full-width underneath the drawer and hid the search results.
+  const DRAWER_PX = 220;
+  const drawerWidth = isMobile ? "100%" : `${DRAWER_PX}px`;
+  const contentWidth = isMobile ? "100%" : `calc(100% - ${DRAWER_PX}px)`;
+  const contentOffset = isMobile ? 0 : `${DRAWER_PX}px`;
+
+  const navItems = [
+    { title: "Начало", path: "/", icon: <HomeIcon /> },
+    { title: "Вестник", path: "/newspaper", icon: <MenuBookIcon /> },
+    { title: "Списания", path: "/magazines", icon: <ImportContactsIcon /> },
+    { title: "Книги", path: "/books", icon: <LocalLibraryIcon /> }
+  ];
 
   return (
     <Router>
@@ -47,25 +69,38 @@ const App: React.FC = () => {
         <AppBar 
           position="fixed" 
           sx={{ 
-            width: { sm: `calc(100% - ${drawerWidth})` },
-            ml: { sm: drawerWidth },
-            backgroundColor: '#111',
-            boxShadow: 3
+            width: contentWidth,
+            ml: contentOffset,
+            backgroundColor: "#f7f4ed",
+            color: "#171512",
+            borderBottom: "1px solid #ddd4c5",
+            boxShadow: "none",
           }}
         >
-          <Toolbar>
+          <Toolbar
+            sx={{
+              justifyContent: "center",
+              alignItems: "center",
+              gap: 1,
+              py: 1.5,
+              px: { xs: 1, md: 3 },
+              flexWrap: "nowrap",
+              minHeight: "auto",
+            }}
+          >
             <IconButton
               color="inherit"
-              aria-label="open drawer"
+              aria-label="toggle drawer"
               edge="start"
               onClick={handleDrawerToggle}
-              sx={{ mr: 2, display: { sm: 'none' } }}
+              sx={{ display: { md: "none" }, flexShrink: 0 }}
             >
-              <MenuIcon />
+              {drawerOpen ? <CloseIcon /> : <MenuIcon />}
             </IconButton>
-            <Typography variant="h6" noWrap component="div" sx={{ fontWeight: 'bold' }}>
-              Тера Фантастика
-            </Typography>
+
+            <Box sx={{ flex: 1, minWidth: 0 }}>
+              <GlobalSearch />
+            </Box>
           </Toolbar>
         </AppBar>
         
@@ -80,25 +115,27 @@ const App: React.FC = () => {
             '& .MuiDrawer-paper': {
               width: drawerWidth,
               boxSizing: 'border-box',
-              backgroundColor: "#111",
-              borderRight: '1px solid rgba(255, 255, 255, 0.12)',
+              backgroundColor: "#f7f4ed",
+              borderRight: '1px solid #ddd4c5',
             },
           }}
         >
           <Box sx={{ 
             display: 'flex', 
             flexDirection: 'column',
-            alignItems: 'center',
-            py: 4,
-            px: 2
+            alignItems: 'flex-start',
+            py: 3,
+            px: 2.5,
           }}>
             <Typography 
-              variant="h5" 
+              variant="h6" 
               component="div" 
               sx={{ 
-                color: 'white', 
-                fontWeight: 'bold',
-                mb: 1
+                color: '#171512',
+                fontWeight: 700,
+                fontFamily: "'Roboto Slab', serif",
+                letterSpacing: '0.04em',
+                mb: 0.5,
               }}
             >
               ТЕРА ФАНТАСТИКА
@@ -106,120 +143,58 @@ const App: React.FC = () => {
             <Typography 
               variant="body2" 
               sx={{ 
-                color: 'rgba(255,255,255,0.7)',
-                textAlign: 'center' 
+                color: '#5d574a',
+                fontStyle: 'italic',
               }}
             >
               Архив на българската фантастика
             </Typography>
           </Box>
           
-          <Divider sx={{ backgroundColor: 'rgba(255,255,255,0.12)' }} />
+          <Divider sx={{ backgroundColor: '#ddd4c5' }} />
           
-          <List sx={{ mt: 2 }}>
-            <ListItem disablePadding>
-              <ListItemButton 
-                component={Link} 
-                to="/" 
-                sx={{ 
-                  color: 'white',
-                  py: 1.5,
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.08)'
-                  }
-                }} 
-                onClick={isMobile ? handleDrawerToggle : undefined}
-              >
-                <ListItemIcon>
-                  <HomeIcon sx={{ color: "white" }} />
-                </ListItemIcon>
-                <ListItemText 
-                  primary="Начало" 
-                  primaryTypographyProps={{ 
-                    fontSize: '0.95rem',
-                    fontWeight: 'medium'
-                  }} 
-                />
-              </ListItemButton>
-            </ListItem>
-            
-            <ListItem disablePadding>
-              <ListItemButton 
-                component={Link} 
-                to="/newspaper" 
-                sx={{ 
-                  color: 'white',
-                  py: 1.5,
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.08)'
-                  }
-                }} 
-                onClick={isMobile ? handleDrawerToggle : undefined}
-              >
-                <ListItemIcon>
-                  <MenuBookIcon sx={{ color: "white" }} />
-                </ListItemIcon>
-                <ListItemText 
-                  primary="Вестник" 
-                  primaryTypographyProps={{ 
-                    fontSize: '0.95rem',
-                    fontWeight: 'medium'
-                  }} 
-                />
-              </ListItemButton>
-            </ListItem>
-            
-            <ListItem disablePadding>
-              <ListItemButton 
-                component={Link} 
-                to="/magazines" 
-                sx={{ 
-                  color: 'white',
-                  py: 1.5,
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.08)'
-                  }
-                }} 
-                onClick={isMobile ? handleDrawerToggle : undefined}
-              >
-                <ListItemIcon>
-                  <ImportContactsIcon sx={{ color: "white" }} />
-                </ListItemIcon>
-                <ListItemText 
-                  primary="Списания" 
-                  primaryTypographyProps={{ 
-                    fontSize: '0.95rem',
-                    fontWeight: 'medium'
-                  }} 
-                />
-              </ListItemButton>
-            </ListItem>
-            
-            <ListItem disablePadding>
-              <ListItemButton 
-                component={Link} 
-                to="/books" 
-                sx={{ 
-                  color: 'white',
-                  py: 1.5,
-                  '&:hover': {
-                    backgroundColor: 'rgba(255,255,255,0.08)'
-                  }
-                }} 
-                onClick={isMobile ? handleDrawerToggle : undefined}
-              >
-                <ListItemIcon>
-                  <LocalLibraryIcon sx={{ color: "white" }} />
-                </ListItemIcon>
-                <ListItemText 
-                  primary="Книги" 
-                  primaryTypographyProps={{ 
-                    fontSize: '0.95rem',
-                    fontWeight: 'medium'
-                  }} 
-                />
-              </ListItemButton>
-            </ListItem>
+          <List sx={{ mt: 1.5, px: 1 }}>
+            {navItems.map((item) => (
+              <ListItem disablePadding key={item.path}>
+                <ListItemButton 
+                  component={NavLink}
+                  to={item.path}
+                  sx={{ 
+                    color: '#171512',
+                    py: 1.25,
+                    px: 1.25,
+                    borderRadius: 999,
+                    mb: 0.5,
+                    '&:hover': {
+                      backgroundColor: '#ede6d8',
+                    },
+                    '&.active': {
+                      backgroundColor: '#171512',
+                      color: '#f7f4ed',
+                      '& .MuiListItemIcon-root': {
+                        color: '#f7f4ed',
+                      },
+                    },
+                  }}
+                  onClick={isMobile ? handleDrawerToggle : undefined}
+                >
+                  <ListItemIcon sx={{
+                    color: "inherit",
+                    minWidth: '40px',
+                  }}>
+                    {item.icon}
+                  </ListItemIcon>
+                  <ListItemText 
+                    primary={item.title}
+                    primaryTypographyProps={{
+                      fontSize: '0.95rem',
+                      fontWeight: 'medium',
+                      fontFamily: "'Roboto', sans-serif",
+                    }}
+                  />
+                </ListItemButton>
+              </ListItem>
+            ))}
           </List>
           
           <Box sx={{ flexGrow: 1 }} />
@@ -229,7 +204,7 @@ const App: React.FC = () => {
               variant="caption" 
               component="p" 
               sx={{ 
-                color: 'rgba(255,255,255,0.5)', 
+                color: '#7a7567', 
                 textAlign: 'center',
                 fontSize: '0.75rem'
               }}
@@ -243,18 +218,21 @@ const App: React.FC = () => {
           component="main"
           sx={{ 
             flexGrow: 1, 
-            width: { sm: `calc(100% - ${drawerWidth})` },
+            width: contentWidth,
             overflow: 'auto',
-            height: '100vh'
+            height: '100vh',
+            backgroundColor: '#f3efe6',
           }}
         >
           <Toolbar /> {/* This creates space for the fixed AppBar */}
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route path="/newspaper" element={<Newspaper />} />
-            <Route path="/magazines" element={<Magazines />} />
-            <Route path="/books" element={<Books />} />
-          </Routes>
+          <Container maxWidth="lg" sx={{ pt: { xs: 2, md: 3 }, pb: 4 }}>
+            <Routes>
+              <Route path="/" element={<Home />} />
+              <Route path="/newspaper" element={<Newspaper />} />
+              <Route path="/magazines" element={<Magazines />} />
+              <Route path="/books" element={<Books />} />
+            </Routes>
+          </Container>
         </Box>
       </Box>
     </Router>

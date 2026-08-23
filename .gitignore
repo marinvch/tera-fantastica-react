@@ -21,5 +21,13 @@
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-*.md
-*.json
+.ai-os/mcp-server/node_modules
+.github/ai-os/memory/.memory.lock
+.github/ai-os/mcp-server/node_modules
+
+# Cortex — generated; .cortex/memory/ is committed on purpose
+.cortex/index/
+.cortex/findings/
+
+# Playwright MCP scratch output
+.playwright-mcp/
